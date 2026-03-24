@@ -1,0 +1,9 @@
+{
+  "identifier": "default",
+  "description": "Default capability for Claude Code UI",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open"
+  ]
+}
