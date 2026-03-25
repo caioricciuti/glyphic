@@ -19,7 +19,7 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue" alt="Platform">
   <img src="https://img.shields.io/badge/built%20with-Tauri%20v2-orange" alt="Tauri">
   <img src="https://img.shields.io/badge/frontend-Svelte%205-red" alt="Svelte">
-  <img src="https://img.shields.io/github/license/caioricciuti/glyphic" alt="License">
+  <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License">
 </p>
 
 ---
@@ -152,7 +152,7 @@ No server, no account, no telemetry. Everything runs locally on your machine.
 
 ## License
 
-MIT
+[AGPL-3.0](LICENSE)
 
 ## Credits
 
