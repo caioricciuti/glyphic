@@ -6,6 +6,7 @@ pub struct ProjectInfo {
     pub hash: String,
     pub path: String,
     pub has_memory: bool,
+    pub exists: bool,
 }
 
 #[tauri::command]
@@ -28,16 +29,21 @@ pub fn list_projects() -> Result<Vec<ProjectInfo>, String> {
         if entry.file_type().map_or(false, |ft| ft.is_dir()) {
             let resolved_path = paths::project_hash_to_path(&file_name);
             let memory_dir = paths::memory_dir(&file_name);
+            let exists = std::path::Path::new(&resolved_path).is_dir();
 
             projects.push(ProjectInfo {
                 hash: file_name,
                 path: resolved_path,
                 has_memory: memory_dir.exists(),
+                exists,
             });
         }
     }
 
-    projects.sort_by(|a, b| a.path.cmp(&b.path));
+    // Sort: existing projects first, then alphabetically
+    projects.sort_by(|a, b| {
+        b.exists.cmp(&a.exists).then(a.path.cmp(&b.path))
+    });
 
     Ok(projects)
 }

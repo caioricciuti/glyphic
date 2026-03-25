@@ -1,3 +1,11 @@
+pub mod git;
+pub mod hooks;
+pub mod instructions;
+pub mod mcp;
+pub mod memory;
+pub mod plugins;
 pub mod projects;
+pub mod rules;
 pub mod settings;
+pub mod skills;
 pub mod stats;

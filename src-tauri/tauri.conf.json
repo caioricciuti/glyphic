@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicoverbruggen/tauri-v2-schema/main/schema.json",
-  "productName": "Claude Code UI",
+  "productName": "Glyphic",
   "version": "0.1.0",
-  "identifier": "com.caio.claude-code-ui",
+  "identifier": "com.caio.glyphic",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Claude Code UI",
+        "title": "Glyphic",
         "width": 1200,
         "height": 800,
         "minWidth": 900,

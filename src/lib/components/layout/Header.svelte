@@ -11,6 +11,9 @@
     skills: "Skills & Agents",
     rules: "Rules",
     plugins: "Plugins",
+    git: "Git",
+    terminal: "Terminal",
+    analytics: "Analytics",
   };
 
   const PAGE_DESCRIPTIONS: Record<Page, string> = {
@@ -23,6 +26,9 @@
     skills: "Custom skills and agent definitions",
     rules: "Contextual rules for Claude",
     plugins: "Browse and manage plugins",
+    git: "Version control for your projects",
+    terminal: "Interactive Claude Code session",
+    analytics: "Token usage, costs, and session traces",
   };
 
   const currentPage = $derived(getCurrentPage());

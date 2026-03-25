@@ -10,6 +10,9 @@
   import SkillsPage from "$lib/components/skills/SkillsPage.svelte";
   import RulesPage from "$lib/components/rules/RulesPage.svelte";
   import PluginsPage from "$lib/components/plugins/PluginsPage.svelte";
+  import GitPage from "$lib/components/git/GitPage.svelte";
+  import TerminalPage from "$lib/components/terminal/TerminalPage.svelte";
+  import AnalyticsPage from "$lib/components/analytics/AnalyticsPage.svelte";
   import { getCurrentPage } from "$lib/stores/navigation.svelte";
 
   const currentPage = $derived(getCurrentPage());
@@ -40,6 +43,12 @@
         <RulesPage />
       {:else if currentPage === "plugins"}
         <PluginsPage />
+      {:else if currentPage === "git"}
+        <GitPage />
+      {:else if currentPage === "terminal"}
+        <TerminalPage />
+      {:else if currentPage === "analytics"}
+        <AnalyticsPage />
       {/if}
     </div>
   </main>

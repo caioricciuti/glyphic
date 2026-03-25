@@ -7,7 +7,10 @@ export type Page =
   | "mcp"
   | "skills"
   | "rules"
-  | "plugins";
+  | "plugins"
+  | "git"
+  | "terminal"
+  | "analytics";
 
 export interface NavItem {
   id: Page;
@@ -25,6 +28,9 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "skills", label: "Skills & Agents", icon: "sparkles" },
   { id: "rules", label: "Rules", icon: "shield" },
   { id: "plugins", label: "Plugins", icon: "puzzle" },
+  { id: "git", label: "Git", icon: "git" },
+  { id: "terminal", label: "Terminal", icon: "terminal" },
+  { id: "analytics", label: "Analytics", icon: "analytics" },
 ];
 
 let currentPage = $state<Page>("dashboard");

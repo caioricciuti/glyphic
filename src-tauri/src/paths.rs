@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn claude_home() -> PathBuf {
     dirs::home_dir()
@@ -51,5 +51,45 @@ pub fn global_rules_dir() -> PathBuf {
 }
 
 pub fn project_hash_to_path(hash: &str) -> String {
-    hash.replace('-', "/")
+    // Naive: replace all `-` with `/`
+    let naive = hash.replace('-', "/");
+    if Path::new(&naive).is_dir() {
+        return naive;
+    }
+
+    // Smart: try to find a real path by grouping segments
+    let segments: Vec<&str> = hash.split('-').filter(|s| !s.is_empty()).collect();
+    if let Some(path) = resolve_segments(&segments, 0, "/") {
+        return path;
+    }
+
+    naive
+}
+
+fn resolve_segments(segments: &[&str], idx: usize, current: &str) -> Option<String> {
+    if idx >= segments.len() {
+        return if Path::new(current).is_dir() {
+            Some(current.to_string())
+        } else {
+            None
+        };
+    }
+
+    // Try joining segments with `-` (longer matches first to prefer real dir names)
+    for end in (idx + 1..=segments.len()).rev() {
+        let joined = segments[idx..end].join("-");
+        let candidate = if current == "/" {
+            format!("/{joined}")
+        } else {
+            format!("{current}/{joined}")
+        };
+
+        if Path::new(&candidate).is_dir() {
+            if let Some(result) = resolve_segments(segments, end, &candidate) {
+                return Some(result);
+            }
+        }
+    }
+
+    None
 }
