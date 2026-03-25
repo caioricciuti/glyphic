@@ -39,6 +39,11 @@ jobs:
         with:
           targets: ${{ matrix.rust_target }}
 
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
@@ -58,16 +63,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          tauriScript: 'bun run tauri'
           tagName: ${{ github.ref_name }}
           releaseName: 'Glyphic ${{ github.ref_name }}'
           releaseBody: |
-            Download Glyphic for your platform:
-            - **macOS (Apple Silicon)**: `.dmg` file (aarch64)
-            - **macOS (Intel)**: `.dmg` file (x86_64)
+            ## Glyphic ${{ github.ref_name }}
+
+            Download for your platform:
+            - **macOS (Apple Silicon)**: `.dmg` (aarch64)
+            - **macOS (Intel)**: `.dmg` (x86_64)
             - **Windows**: `.msi` installer
             - **Linux**: `.deb` package or `.AppImage`
 
-            See [README](https://github.com/caioricciuti/glyphic#readme) for setup instructions.
+            **Requires:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed (`claude` CLI in PATH)
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
