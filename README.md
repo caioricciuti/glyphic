@@ -70,9 +70,20 @@ Token usage and cost tracking per model. Daily token trend and hourly activity c
 
 Go to [Releases](https://github.com/caioricciuti/glyphic/releases) and download the latest version for your platform:
 
-- **macOS**: `.dmg` (Apple Silicon + Intel)
-- **Windows**: `.msi` installer
-- **Linux**: `.deb` / `.AppImage`
+- **macOS (Apple Silicon)**: `Glyphic_x.x.x_aarch64.dmg`
+- **macOS (Intel)**: `Glyphic_x.x.x_x64.dmg`
+- **Windows**: `.msi` installer or `.exe` setup
+- **Linux**: `.deb` package, `.AppImage`, or `.rpm`
+
+### macOS: "App is damaged" fix
+
+Since the app isn't code-signed with an Apple Developer certificate, macOS will show a warning when you first open it. After installing, run this in Terminal:
+
+```bash
+xattr -cr /Applications/Glyphic.app
+```
+
+Then open Glyphic normally. You only need to do this once.
 
 ### Prerequisites
 
