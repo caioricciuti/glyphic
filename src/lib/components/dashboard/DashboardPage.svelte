@@ -11,9 +11,13 @@
   import ConfigCompletenessRing from "./ConfigCompletenessRing.svelte";
   import ActivityHeatmap from "./ActivityHeatmap.svelte";
   import AchievementGrid from "./AchievementGrid.svelte";
+  import SessionMonitor from "$lib/components/sessions/SessionMonitor.svelte";
+  import type { CostSummary } from "$lib/tauri/commands";
+  import { DollarSign, TrendingUp } from "lucide-svelte";
 
   let stats = $state<StatsCache | null>(null);
   let settings = $state<Settings | null>(null);
+  let costSummary = $state<CostSummary | null>(null);
   let loading = $state(true);
   const totalMessages = $derived(stats?.totalMessages ?? 0);
   const totalSessions = $derived(stats?.totalSessions ?? 0);
@@ -27,12 +31,14 @@
 
   onMount(async () => {
     try {
-      const [s, set] = await Promise.all([
+      const [s, set, cost] = await Promise.all([
         api.stats.computeLive(),
         api.settings.read("global"),
+        api.budget.getCostSummary(),
       ]);
       stats = s as StatsCache;
       settings = set;
+      costSummary = cost;
     } catch (e) {
       console.error("Failed to load dashboard data:", e);
     } finally {
@@ -76,24 +82,50 @@
       <StreakCard current={streak.current} longest={streak.longest} lastActiveDate={streak.lastActiveDate} />
       <ConfigCompletenessRing {settings} />
 
-      <!-- Quick Actions -->
+      <!-- Cost Overview -->
       <div class="bg-bg-secondary border border-border rounded-lg p-4">
-        <h3 class="text-sm font-medium text-text-secondary mb-3">Quick Actions</h3>
-        <div class="space-y-2">
-          {#each [
-            { label: "Configure Hooks", page: "hooks" as const },
-            { label: "Add MCP Server", page: "mcp" as const },
-            { label: "Edit Instructions", page: "instructions" as const },
-            { label: "Create Skill", page: "skills" as const },
-          ] as action}
+        <h3 class="text-sm font-medium text-text-secondary mb-3 flex items-center gap-1.5">
+          <DollarSign size={14} />
+          Cost Overview
+        </h3>
+        {#if costSummary}
+          <div class="space-y-3">
+            <div>
+              <div class="flex items-center justify-between text-xs mb-0.5">
+                <span class="text-text-muted">Today</span>
+                <span class="font-medium {costSummary.daily_exceeded ? 'text-danger' : 'text-text-primary'}">${costSummary.today.toFixed(2)}</span>
+              </div>
+              {#if costSummary.daily_limit}
+                <div class="h-1.5 bg-bg-tertiary rounded-full overflow-hidden">
+                  <div class="h-full {costSummary.daily_exceeded ? 'bg-danger' : 'bg-accent'} rounded-full" style="width: {Math.min((costSummary.today / costSummary.daily_limit) * 100, 100)}%"></div>
+                </div>
+              {/if}
+            </div>
+            <div>
+              <div class="flex items-center justify-between text-xs mb-0.5">
+                <span class="text-text-muted">This month</span>
+                <span class="font-medium text-text-primary">${costSummary.this_month.toFixed(2)}</span>
+              </div>
+              {#if costSummary.monthly_limit}
+                <div class="h-1.5 bg-bg-tertiary rounded-full overflow-hidden">
+                  <div class="h-full {costSummary.monthly_exceeded ? 'bg-danger' : 'bg-accent'} rounded-full" style="width: {Math.min((costSummary.this_month / costSummary.monthly_limit) * 100, 100)}%"></div>
+                </div>
+              {/if}
+            </div>
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-text-muted flex items-center gap-1"><TrendingUp size={10} /> Projection</span>
+              <span class="text-text-secondary">${costSummary.monthly_projection.toFixed(2)}/mo</span>
+            </div>
             <button
-              class="w-full text-left px-3 py-2 text-sm text-text-secondary bg-bg-tertiary hover:bg-bg-hover rounded-md transition-colors"
-              onclick={() => navigateTo(action.page)}
+              class="w-full text-xs text-accent hover:text-accent-hover py-1 transition-colors"
+              onclick={() => navigateTo("analytics")}
             >
-              {action.label}
+              View full analytics →
             </button>
-          {/each}
-        </div>
+          </div>
+        {:else}
+          <p class="text-xs text-text-muted">Loading...</p>
+        {/if}
       </div>
     </div>
 
@@ -101,6 +133,10 @@
     <ActivityHeatmap dailyActivity={stats?.dailyActivity ?? []} />
 
     <!-- Achievements -->
-    <AchievementGrid {achievements} />
+    <!-- Session Monitor + Achievements -->
+    <div class="grid grid-cols-2 gap-4">
+      <SessionMonitor />
+      <AchievementGrid {achievements} />
+    </div>
   {/if}
 </div>
