@@ -120,6 +120,11 @@ export const api = {
     install: (name: string) => invoke<string>("install_plugin", { name }),
   },
 
+  maintenance: {
+    getDiskUsage: () => invoke<DiskUsageReport>("get_disk_usage"),
+    cleanup: (name: string) => invoke<number>("cleanup_directory", { name }),
+  },
+
   budget: {
     get: () => invoke<BudgetSettings>("get_budget"),
     set: (dailyLimit: number | null, monthlyLimit: number | null, planType?: string) =>
@@ -177,6 +182,21 @@ export interface GitLogEntry {
   message: string;
   author: string;
   date: string;
+}
+
+export interface DiskUsageReport {
+  total_bytes: number;
+  total_display: string;
+  entries: DiskUsageEntry[];
+}
+
+export interface DiskUsageEntry {
+  name: string;
+  path: string;
+  size_bytes: number;
+  size_display: string;
+  description: string;
+  safe_to_delete: boolean;
 }
 
 export interface BudgetSettings {

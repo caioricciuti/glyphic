@@ -1,5 +1,6 @@
 pub mod budget;
 pub mod git;
+pub mod maintenance;
 pub mod hooks;
 pub mod instructions;
 pub mod mcp;

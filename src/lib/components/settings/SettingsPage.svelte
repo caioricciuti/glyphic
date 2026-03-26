@@ -7,8 +7,8 @@
   import EnvVarsEditor from "./EnvVarsEditor.svelte";
   import ProjectPicker from "$lib/components/shared/ProjectPicker.svelte";
   import { getSelectedProjectPath } from "$lib/stores/project-context.svelte";
-  import { Info, CreditCard } from "lucide-svelte";
-  import type { BudgetSettings } from "$lib/tauri/commands";
+  import { Info, CreditCard, HardDrive, Trash2 } from "lucide-svelte";
+  import type { BudgetSettings, DiskUsageReport } from "$lib/tauri/commands";
 
   let activeTab = $state<"global" | "project">("global");
   let globalSettings = $state<Settings>({});
@@ -17,6 +17,8 @@
   let loading = $state(true);
   let savingGlobal = $state(false);
   let budgetSettings = $state<BudgetSettings | null>(null);
+  let diskUsage = $state<DiskUsageReport | null>(null);
+  let cleaning = $state<string | null>(null);
   let savingProject = $state(false);
   let savingLocal = $state(false);
   let saveMessage = $state<string | null>(null);
@@ -26,6 +28,20 @@
 
   async function loadBudget() {
     try { budgetSettings = await api.budget.get(); } catch { /* silent */ }
+  }
+
+  async function loadDiskUsage() {
+    try { diskUsage = await api.maintenance.getDiskUsage(); } catch { /* silent */ }
+  }
+
+  async function cleanupDir(name: string) {
+    cleaning = name;
+    try {
+      await api.maintenance.cleanup(name);
+      await loadDiskUsage();
+      showSave(`Cleaned ${name}!`);
+    } catch (e) { showSave(`Error: ${e}`); }
+    finally { cleaning = null; }
   }
 
   async function saveBudget() {
@@ -104,7 +120,7 @@
     loadSettings();
   }
 
-  onMount(() => { loadSettings(); loadBudget(); });
+  onMount(() => { loadSettings(); loadBudget(); loadDiskUsage(); });
 </script>
 
 <div class="p-6 overflow-y-auto h-full">
@@ -244,6 +260,47 @@
       <GeneralSettings bind:settings={globalSettings} />
       <PermissionsEditor bind:settings={globalSettings} />
       <EnvVarsEditor bind:settings={globalSettings} />
+
+      <!-- Maintenance -->
+      {#if diskUsage}
+        <div class="bg-bg-secondary border border-border rounded-lg p-4 space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-medium text-text-secondary flex items-center gap-1.5">
+              <HardDrive size={14} />
+              Storage — {diskUsage.total_display}
+            </h3>
+            <button class="text-xs text-accent hover:text-accent-hover" onclick={loadDiskUsage}>Refresh</button>
+          </div>
+
+          <div class="space-y-2">
+            {#each diskUsage.entries as entry}
+              <div class="flex items-center justify-between py-1.5 {entry.safe_to_delete ? '' : 'opacity-60'}">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm text-text-primary font-mono">{entry.name}</span>
+                    <span class="text-xs text-text-muted">{entry.description}</span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-3 shrink-0">
+                  <span class="text-xs font-medium text-text-secondary">{entry.size_display}</span>
+                  {#if entry.safe_to_delete}
+                    <button
+                      class="flex items-center gap-1 px-2 py-1 text-[10px] bg-danger/10 text-danger rounded hover:bg-danger/20 transition-colors disabled:opacity-50"
+                      onclick={() => cleanupDir(entry.name)}
+                      disabled={cleaning === entry.name}
+                    >
+                      <Trash2 size={10} />
+                      {cleaning === entry.name ? "..." : "Clean"}
+                    </button>
+                  {:else}
+                    <span class="text-[10px] text-text-muted px-2">protected</span>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
     </div>
   {:else if !projectPath}
     <div class="flex items-center justify-center h-48 text-sm text-text-muted">

@@ -63,6 +63,9 @@ pub fn run() {
             commands::git::git_checkout,
             commands::git::git_init,
             commands::git::open_in_terminal,
+            // Maintenance
+            commands::maintenance::get_disk_usage,
+            commands::maintenance::cleanup_directory,
             // Budget
             commands::budget::get_budget,
             commands::budget::set_budget,

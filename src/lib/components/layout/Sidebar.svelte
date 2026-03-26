@@ -1,14 +1,31 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { NAV_ITEMS, getCurrentPage, navigateTo } from "$lib/stores/navigation.svelte";
+  import {
+    NAV_ITEMS,
+    getCurrentPage,
+    navigateTo,
+  } from "$lib/stores/navigation.svelte";
   import { api } from "$lib/tauri/commands";
   import { calculateXP } from "$lib/utils/achievements";
   import { formatNumber } from "$lib/utils/format";
   import type { StatsCache, Settings } from "$lib/types";
   import {
-    BarChart3, Settings as SettingsIcon, Zap, BookOpen, Brain,
-    Server, Sparkles, Shield, Puzzle, GitBranch, TerminalSquare, Activity,
-    LayoutGrid, Sun, Moon, History,
+    BarChart3,
+    Settings as SettingsIcon,
+    Zap,
+    BookOpen,
+    Brain,
+    Server,
+    Sparkles,
+    Shield,
+    Puzzle,
+    GitBranch,
+    TerminalSquare,
+    Activity,
+    LayoutGrid,
+    Sun,
+    Moon,
+    History,
   } from "lucide-svelte";
   import { getTheme, toggleTheme } from "$lib/stores/theme.svelte";
   import type { CostSummary } from "$lib/tauri/commands";
@@ -57,10 +74,14 @@
   });
 </script>
 
-<aside class="flex flex-col h-full w-60 bg-bg-secondary border-r border-border shrink-0">
+<aside
+  class="flex flex-col h-full w-60 bg-bg-secondary border-r border-border shrink-0"
+>
   <!-- Logo -->
-  <div class="flex items-center gap-2 px-4 py-4 border-b border-border">
-    <div class="w-8 h-8 rounded-lg bg-accent flex items-center justify-center text-white font-bold text-base">
+  <div class="flex items-center gap-2 px-4 py-[13.5px] border-b border-border">
+    <div
+      class="w-8 h-8 rounded-lg bg-accent flex items-center justify-center text-white font-bold text-base"
+    >
       G
     </div>
     <div>
@@ -76,8 +97,8 @@
       <button
         class="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors
           {currentPage === item.id
-            ? 'bg-accent-dim text-accent border-r-2 border-accent'
-            : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'}"
+          ? 'bg-accent-dim text-accent border-r-2 border-accent'
+          : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'}"
         onclick={() => navigateTo(item.id)}
       >
         <span class="w-5 h-5 flex items-center justify-center">
@@ -95,20 +116,29 @@
     <div class="px-4 py-2 border-t border-border">
       <div class="flex items-center justify-between text-xs mb-1">
         <span class="text-text-muted">Today</span>
-        <span class="font-medium {costSummary.daily_exceeded ? 'text-danger' : 'text-text-primary'}">
+        <span
+          class="font-medium {costSummary.daily_exceeded
+            ? 'text-danger'
+            : 'text-text-primary'}"
+        >
           ${costSummary.today.toFixed(2)}
         </span>
       </div>
       <div class="flex items-center justify-between text-xs mb-1.5">
         <span class="text-text-muted">This month</span>
-        <span class="font-medium text-text-primary">${costSummary.this_month.toFixed(2)}</span>
+        <span class="font-medium text-text-primary"
+          >${costSummary.this_month.toFixed(2)}</span
+        >
       </div>
       <!-- Mini sparkline -->
       {#if costSummary.last_7_days.length > 0}
         {@const max = Math.max(...costSummary.last_7_days, 0.01)}
         <div class="flex items-end gap-px h-4">
           {#each costSummary.last_7_days as val}
-            <div class="flex-1 bg-accent/40 rounded-t-sm" style="height: {Math.max((val / max) * 100, 5)}%"></div>
+            <div
+              class="flex-1 bg-accent/40 rounded-t-sm"
+              style="height: {Math.max((val / max) * 100, 5)}%"
+            ></div>
           {/each}
         </div>
       {/if}
@@ -141,7 +171,10 @@
       <span>{formatNumber(xp.currentXP)} XP</span>
     </div>
     <div class="w-full h-2 bg-bg-tertiary rounded-full overflow-hidden">
-      <div class="h-full bg-accent rounded-full transition-all duration-500" style="width: {xpPct}%"></div>
+      <div
+        class="h-full bg-accent rounded-full transition-all duration-500"
+        style="width: {xpPct}%"
+      ></div>
     </div>
   </div>
 </aside>

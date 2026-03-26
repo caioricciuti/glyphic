@@ -38,7 +38,7 @@
   const currentPage = $derived(getCurrentPage());
 </script>
 
-<header class="flex items-center justify-between px-6 py-4 border-b border-border bg-bg-secondary">
+<header class="flex items-center justify-between px-6 py-[7px] border-b border-border bg-bg-secondary">
   <div>
     <h2 class="text-lg font-semibold text-text-primary">{PAGE_TITLES[currentPage]}</h2>
     <p class="text-sm text-text-muted">{PAGE_DESCRIPTIONS[currentPage]}</p>
