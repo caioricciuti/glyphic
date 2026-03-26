@@ -11,6 +11,7 @@
   import RulesPage from "$lib/components/rules/RulesPage.svelte";
   import PluginsPage from "$lib/components/plugins/PluginsPage.svelte";
   import GitPage from "$lib/components/git/GitPage.svelte";
+  import TemplatesPage from "$lib/components/templates/TemplatesPage.svelte";
   import TerminalPage from "$lib/components/terminal/TerminalPage.svelte";
   import AnalyticsPage from "$lib/components/analytics/AnalyticsPage.svelte";
   import { getCurrentPage } from "$lib/stores/navigation.svelte";
@@ -45,6 +46,8 @@
         <PluginsPage />
       {:else if currentPage === "git"}
         <GitPage />
+      {:else if currentPage === "templates"}
+        <TemplatesPage />
       {:else if currentPage === "terminal"}
         <TerminalPage />
       {:else if currentPage === "analytics"}

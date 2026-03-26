@@ -14,6 +14,7 @@
     git: "Git",
     terminal: "Terminal",
     analytics: "Analytics",
+    templates: "Templates",
   };
 
   const PAGE_DESCRIPTIONS: Record<Page, string> = {
@@ -29,6 +30,7 @@
     git: "Version control for your projects",
     terminal: "Interactive Claude Code session",
     analytics: "Token usage, costs, and session traces",
+    templates: "Browse and add pre-built configurations",
   };
 
   const currentPage = $derived(getCurrentPage());

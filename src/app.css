@@ -23,6 +23,22 @@
   --color-info-dim: #58a6ff26;
 }
 
+/* Light theme overrides */
+[data-theme="light"] {
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f6f8fa;
+  --color-bg-tertiary: #eef1f5;
+  --color-bg-hover: #e2e6eb;
+  --color-border: #d1d9e0;
+  --color-border-light: #bcc3cc;
+  --color-text-primary: #1f2328;
+  --color-text-secondary: #59636e;
+  --color-text-muted: #8b949e;
+  --color-accent: #8b5cf6;
+  --color-accent-hover: #7c3aed;
+  --color-accent-dim: #8b5cf626;
+}
+
 html, body, #app {
   margin: 0;
   padding: 0;

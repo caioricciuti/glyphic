@@ -8,7 +8,9 @@
   import {
     BarChart3, Settings as SettingsIcon, Zap, BookOpen, Brain,
     Server, Sparkles, Shield, Puzzle, GitBranch, TerminalSquare, Activity,
+    LayoutGrid, Sun, Moon,
   } from "lucide-svelte";
+  import { getTheme, toggleTheme } from "$lib/stores/theme.svelte";
 
   const currentPage = $derived(getCurrentPage());
 
@@ -29,9 +31,12 @@
     shield: Shield,
     puzzle: Puzzle,
     git: GitBranch,
+    templates: LayoutGrid,
     terminal: TerminalSquare,
     analytics: Activity,
   };
+
+  const currentTheme = $derived(getTheme());
 
   onMount(async () => {
     try {
@@ -80,8 +85,24 @@
     {/each}
   </nav>
 
+  <!-- Theme toggle -->
+  <div class="px-4 py-2 border-t border-border">
+    <button
+      class="w-full flex items-center gap-3 px-3 py-2 text-sm text-text-secondary hover:bg-bg-hover hover:text-text-primary rounded-md transition-colors"
+      onclick={toggleTheme}
+    >
+      {#if currentTheme === "dark"}
+        <Sun size={16} />
+        <span>Light Mode</span>
+      {:else}
+        <Moon size={16} />
+        <span>Dark Mode</span>
+      {/if}
+    </button>
+  </div>
+
   <!-- XP Bar -->
-  <div class="p-4 border-t border-border">
+  <div class="px-4 py-3 border-t border-border">
     <div class="flex items-center justify-between text-xs text-text-muted mb-1">
       <span>Level {xp.level} — {xp.levelName}</span>
       <span>{formatNumber(xp.currentXP)} XP</span>

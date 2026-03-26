@@ -10,7 +10,8 @@ export type Page =
   | "plugins"
   | "git"
   | "terminal"
-  | "analytics";
+  | "analytics"
+  | "templates";
 
 export interface NavItem {
   id: Page;
@@ -29,6 +30,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "rules", label: "Rules", icon: "shield" },
   { id: "plugins", label: "Plugins", icon: "puzzle" },
   { id: "git", label: "Git", icon: "git" },
+  { id: "templates", label: "Templates", icon: "templates" },
   { id: "terminal", label: "Terminal", icon: "terminal" },
   { id: "analytics", label: "Analytics", icon: "analytics" },
 ];
