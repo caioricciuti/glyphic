@@ -32,9 +32,21 @@
     }),
   );
 
-  // Meaningful events only (skip progress, etc.)
+  // Meaningful events only (skip progress, tool-result-as-user-msg, etc.)
   const displayEvents = $derived(
-    events.filter((e) => ["user", "assistant", "tool_result"].includes(e.type)),
+    events.filter((e) => {
+      if (!["user", "assistant", "tool_result"].includes(e.type)) return false;
+      // Skip user messages that are just tool_result wrappers (API-level, not real user input)
+      if (e.type === "user") {
+        const msg = (e.content.message ?? {}) as Record<string, unknown>;
+        const content = msg.content;
+        if (Array.isArray(content)) {
+          const hasText = (content as Array<Record<string, unknown>>).some((item) => item.type === "text");
+          if (!hasText) return false; // Only tool_result items, no actual user text
+        }
+      }
+      return true;
+    }),
   );
 
   const visibleEvents = $derived(
