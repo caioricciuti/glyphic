@@ -18,6 +18,9 @@
   let selectedSession = $state<SessionSummary | null>(null);
   let events = $state<SessionEvent[]>([]);
   let loadingEvents = $state(false);
+  let loadingMoreEvents = $state(false);
+  let hasMoreEvents = $state(false);
+  let totalEvents = $state(0);
 
   // Replay controls
   let playing = $state(false);
@@ -139,19 +142,39 @@
   }
 
   async function selectSession(session: SessionSummary) {
+    // Immediately clear and show loading
     selectedSession = session;
+    events = [];
     loadingEvents = true;
     playing = false;
     visibleCount = 0;
     expandedEvents = new Set();
     if (playInterval) clearInterval(playInterval);
     try {
-      events = await api.sessions.load(session.path);
+      const result = await api.sessions.load(session.path, 50, 0);
+      events = result.events;
+      hasMoreEvents = result.has_more;
+      totalEvents = result.total;
     } catch (e) {
       console.error("Failed to load session:", e);
       events = [];
     } finally {
       loadingEvents = false;
+    }
+  }
+
+  async function loadMoreEvents() {
+    if (!selectedSession || loadingMoreEvents) return;
+    loadingMoreEvents = true;
+    try {
+      const result = await api.sessions.load(selectedSession.path, 50, events.length);
+      events = [...events, ...result.events];
+      hasMoreEvents = result.has_more;
+      totalEvents = result.total;
+    } catch (e) {
+      console.error("Failed:", e);
+    } finally {
+      loadingMoreEvents = false;
     }
   }
 
@@ -402,6 +425,18 @@
         {#if playing && visibleCount < displayEvents.length}
           <div class="flex items-center justify-center py-4">
             <div class="w-2 h-2 rounded-full bg-accent animate-pulse"></div>
+          </div>
+        {/if}
+
+        {#if hasMoreEvents && !playing}
+          <div class="py-4">
+            <button
+              class="w-full py-2 text-xs bg-bg-tertiary border border-border rounded-md text-text-secondary hover:border-accent/30 transition-colors disabled:opacity-50"
+              onclick={loadMoreEvents}
+              disabled={loadingMoreEvents}
+            >
+              {loadingMoreEvents ? "Loading..." : `Load more events (${events.length}/${totalEvents})`}
+            </button>
           </div>
         {/if}
       </div>

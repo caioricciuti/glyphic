@@ -241,13 +241,23 @@ pub fn list_sessions(limit: Option<usize>, offset: Option<usize>) -> Result<Sess
     })
 }
 
+#[derive(Serialize)]
+pub struct SessionLoadResult {
+    pub events: Vec<SessionEvent>,
+    pub total: usize,
+    pub has_more: bool,
+}
+
 #[tauri::command]
-pub fn load_session(path: String) -> Result<Vec<SessionEvent>, String> {
+pub fn load_session(path: String, limit: Option<usize>, offset: Option<usize>) -> Result<SessionLoadResult, String> {
     let file = std::fs::File::open(&path)
         .map_err(|e| format!("failed to open session: {e}"))?;
     let reader = std::io::BufReader::new(file);
 
+    let off = offset.unwrap_or(0);
+    let lim = limit.unwrap_or(50);
     let mut events = Vec::new();
+    let mut total = 0usize;
 
     for line in reader.lines() {
         let line = match line {
@@ -269,21 +279,29 @@ pub fn load_session(path: String) -> Result<Vec<SessionEvent>, String> {
             .unwrap_or("unknown")
             .to_string();
 
-        if event_type == "file-history-snapshot" || event_type == "last-prompt" {
+        if event_type == "file-history-snapshot" || event_type == "last-prompt" || event_type == "progress" {
             continue;
         }
 
-        let timestamp = parsed
-            .get("timestamp")
-            .and_then(|t| t.as_str())
-            .map(|s| s.to_string());
+        if total >= off && events.len() < lim {
+            let timestamp = parsed
+                .get("timestamp")
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string());
 
-        events.push(SessionEvent {
-            event_type,
-            timestamp,
-            content: parsed,
-        });
+            events.push(SessionEvent {
+                event_type,
+                timestamp,
+                content: parsed,
+            });
+        }
+
+        total += 1;
     }
 
-    Ok(events)
+    Ok(SessionLoadResult {
+        events,
+        total,
+        has_more: off + lim < total,
+    })
 }

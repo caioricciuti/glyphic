@@ -123,7 +123,8 @@ export const api = {
   sessions: {
     list: (limit?: number, offset?: number) =>
       invoke<SessionListResult>("list_sessions", { limit, offset }),
-    load: (path: string) => invoke<SessionEvent[]>("load_session", { path }),
+    load: (path: string, limit?: number, offset?: number) =>
+      invoke<SessionLoadResult>("load_session", { path, limit, offset }),
   },
 
   git: {
@@ -188,6 +189,12 @@ export interface SessionSummary {
   first_timestamp: string | null;
   last_timestamp: string | null;
   first_message: string | null;
+}
+
+export interface SessionLoadResult {
+  events: SessionEvent[];
+  total: number;
+  has_more: boolean;
 }
 
 export interface SessionEvent {
