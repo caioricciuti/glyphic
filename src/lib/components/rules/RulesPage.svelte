@@ -6,7 +6,8 @@
   import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
   import { getSelectedProjectPath } from "$lib/stores/project-context.svelte";
   import { marked } from "marked";
-  import { Shield, Plus, Search, X, Trash2, FileText, Filter } from "lucide-svelte";
+  import { Shield, Plus, Search, X, Trash2, FileText, Filter, LayoutGrid } from "lucide-svelte";
+  import TemplateGallery from "$lib/components/shared/TemplateGallery.svelte";
 
   let scope = $state<"global" | "project">("global");
   let rules = $state<RuleFile[]>([]);
@@ -23,6 +24,7 @@
   let saving = $state(false);
   let saveMessage = $state<string | null>(null);
   let previewMode = $state(false);
+  let galleryOpen = $state(false);
 
   // Delete
   let deleteDialogOpen = $state(false);
@@ -104,18 +106,6 @@
     finally { deleteDialogOpen = false; }
   }
 
-  // Templates
-  const TEMPLATES = [
-    { name: "typescript-strict", label: "TypeScript Strict", paths: ["**/*.ts", "**/*.tsx"], content: "# TypeScript Rules\n\n- Use strict mode, no `any` types\n- Named exports over default exports\n- Prefer interfaces over type aliases for objects\n- Use explicit return types on public functions\n- No unused variables or imports" },
-    { name: "api-design", label: "API Design", paths: ["src/api/**/*", "src/routes/**/*"], content: "# API Design Rules\n\n- All endpoints must validate input\n- Use standard error format: `{ error: string, code: number }`\n- Return proper HTTP status codes\n- Include pagination for list endpoints\n- Document endpoints with JSDoc" },
-    { name: "testing", label: "Testing Standards", paths: ["**/*.test.*", "**/*.spec.*"], content: "# Testing Rules\n\n- Co-locate test files with source files\n- Use descriptive names: 'should [behavior] when [condition]'\n- No test should depend on another test's state\n- Mock external services, not internal modules\n- Aim for 80%+ coverage on critical paths" },
-    { name: "security", label: "Security", paths: [], content: "# Security Rules\n\n- Never commit secrets, API keys, or credentials\n- Sanitize user input before database queries\n- Use parameterized queries, never string concatenation\n- Validate all external data at system boundaries\n- Use HTTPS for all external API calls" },
-    { name: "git-commits", label: "Git Conventions", paths: [], content: "# Git Commit Rules\n\n- Use conventional commits: `type(scope): description`\n- Types: feat, fix, refactor, test, docs, chore\n- Keep commits atomic and focused\n- Write imperative mood: 'add feature' not 'added feature'\n- Reference issue numbers when applicable" },
-    { name: "error-handling", label: "Error Handling", paths: ["src/**/*"], content: "# Error Handling Rules\n\n- Never swallow errors silently\n- Use custom error classes for domain errors\n- Always include error context (what was being done)\n- Log errors at the point of handling, not catching\n- Return user-friendly messages, log technical details" },
-    { name: "performance", label: "Performance", paths: [], content: "# Performance Rules\n\n- Avoid N+1 queries — use batch loading\n- Use pagination for large data sets\n- Lazy-load non-critical resources\n- Profile before optimizing\n- Cache expensive computations" },
-    { name: "accessibility", label: "Accessibility", paths: ["**/*.svelte", "**/*.tsx", "**/*.jsx"], content: "# Accessibility Rules\n\n- All images must have alt text\n- Use semantic HTML elements\n- Ensure keyboard navigation works\n- Maintain sufficient color contrast\n- Add aria-labels to icon-only buttons" },
-  ];
-
   onMount(loadRules);
 </script>
 
@@ -169,32 +159,19 @@
           </button>
         {/each}
 
-        {#if filteredRules.length === 0 && !isNew}
-          <div class="px-3 py-3 space-y-2">
-            <p class="text-xs text-text-muted">No rules. Try a template:</p>
-            {#each TEMPLATES as tpl}
-              <button
-                class="w-full text-left p-2 bg-bg-tertiary border border-border rounded-md hover:border-accent/30 transition-colors"
-                onclick={async () => {
-                  const pp = needsProject ? projectPath ?? undefined : undefined;
-                  await api.rules.write(scope, tpl.name + ".md", tpl.paths, tpl.content, pp);
-                  await loadRules();
-                  const found = rules.find((r) => r.name === tpl.name);
-                  if (found) selectRule(found);
-                }}
-              >
-                <p class="text-xs font-medium text-accent">{tpl.label}</p>
-                <p class="text-[10px] text-text-muted truncate">{tpl.content.split("\n")[2]}</p>
-              </button>
-            {/each}
-          </div>
-        {/if}
       {/if}
     </div>
 
-    <div class="p-3 border-t border-border">
-      <button class="w-full flex items-center justify-center gap-1.5 py-2 text-xs bg-accent hover:bg-accent-hover text-white rounded-md transition-colors" onclick={startCreate}>
+    <div class="p-3 border-t border-border flex gap-2">
+      <button class="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs bg-accent hover:bg-accent-hover text-white rounded-md transition-colors" onclick={startCreate}>
         <Plus size={14} /> Create Rule
+      </button>
+      <button
+        class="flex items-center justify-center gap-1.5 px-3 py-2 text-xs bg-bg-tertiary border border-border rounded-md text-text-secondary hover:border-accent/30 hover:text-accent transition-colors"
+        onclick={() => (galleryOpen = true)}
+      >
+        <LayoutGrid size={14} />
+        Templates
       </button>
     </div>
   </div>
@@ -299,3 +276,19 @@
     {/if}
   </div>
 </div>
+
+<TemplateGallery
+  open={galleryOpen}
+  defaultCategory="rule"
+  onselect={async (template) => {
+    const pp = needsProject ? projectPath ?? undefined : undefined;
+    const name = template.name.toLowerCase().replace(/\s+/g, "-");
+    const filename = name + ".md";
+    const paths = template.paths ?? [];
+    await api.rules.write(scope, filename, paths, template.content ?? "", pp);
+    await loadRules();
+    const found = rules.find((r) => r.name === name);
+    if (found) selectRule(found);
+  }}
+  onclose={() => (galleryOpen = false)}
+/>

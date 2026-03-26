@@ -7,7 +7,8 @@
   import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
   import ProjectPicker from "$lib/components/shared/ProjectPicker.svelte";
   import { getSelectedProjectPath } from "$lib/stores/project-context.svelte";
-  import { Plus, Terminal, Globe, MessageSquare, Zap, FileText } from "lucide-svelte";
+  import { Plus, Zap, LayoutGrid } from "lucide-svelte";
+  import TemplateGallery from "$lib/components/shared/TemplateGallery.svelte";
 
   interface FlatHook {
     event: string;
@@ -24,6 +25,7 @@
   let saveMessage = $state<string | null>(null);
   let selectedEvent = $state<HookEvent | null>(null);
   let showAddForm = $state(false);
+  let galleryOpen = $state(false);
 
   // Delete dialog
   let deleteTarget = $state<FlatHook | null>(null);
@@ -132,13 +134,6 @@
     showAddForm = false;
   }
 
-  const TEMPLATES = [
-    { label: "Shell Command", icon: Terminal, matcher: "", type: "command" as const, value: "echo 'triggered'" },
-    { label: "HTTP Webhook", icon: Globe, matcher: "", type: "http" as const, value: "http://localhost:8080/hook" },
-    { label: "Prompt Guard", icon: MessageSquare, matcher: "", type: "prompt" as const, value: "Check if this is safe" },
-    { label: "Log to File", icon: FileText, matcher: "", type: "command" as const, value: "echo \"$(date)\" >> ~/.claude/hooks.log" },
-  ];
-
   onMount(loadHooks);
 </script>
 
@@ -170,6 +165,13 @@
       {#if saveMessage}
         <span class="text-xs {saveMessage.startsWith('Error') ? 'text-danger' : 'text-success'}">{saveMessage}</span>
       {/if}
+      <button
+        class="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-bg-tertiary border border-border rounded-md text-text-secondary hover:border-accent/30 hover:text-accent transition-colors"
+        onclick={() => (galleryOpen = true)}
+      >
+        <LayoutGrid size={14} />
+        Templates
+      </button>
       <button
         class="px-4 py-1.5 text-sm bg-accent hover:bg-accent-hover text-white rounded-md transition-colors disabled:opacity-50"
         onclick={saveHooks} disabled={saving}
@@ -268,30 +270,28 @@
             </button>
           {/if}
 
-          <!-- Quick Add -->
-          <div class="pt-2">
-            <p class="text-xs text-text-muted uppercase tracking-wider mb-2">Quick Add</p>
-            <div class="flex flex-wrap gap-2">
-              {#each TEMPLATES as tpl}
-                {@const TplIcon = tpl.icon}
-                <button
-                  class="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-bg-tertiary border border-border rounded-md text-text-secondary hover:border-accent/30 hover:text-accent transition-colors"
-                  onclick={() => {
-                    const h: HookHandler = { type: tpl.type };
-                    if (tpl.type === "command") h.command = tpl.value;
-                    else if (tpl.type === "http") h.url = tpl.value;
-                    else h.prompt = tpl.value;
-                    addHook(selectedEvent!, tpl.matcher || undefined, h);
-                  }}
-                >
-                  <TplIcon size={12} />
-                  {tpl.label}
-                </button>
-              {/each}
-            </div>
-          </div>
         {/if}
       </div>
     </div>
   {/if}
 </div>
+
+<TemplateGallery
+  open={galleryOpen}
+  defaultCategory="hook"
+  onselect={(template) => {
+    if (!selectedEvent && template.event) {
+      selectedEvent = template.event as HookEvent;
+    }
+    const event = template.event ?? selectedEvent ?? "PreToolUse";
+    const matcher = template.matcher || undefined;
+    const hookType = template.hookType ?? "command";
+    const handler: HookHandler = { type: hookType };
+    if (hookType === "command") handler.command = template.hookValue ?? "echo 'hook'";
+    else if (hookType === "http") handler.url = template.hookValue ?? "http://localhost:8080/hook";
+    else if (hookType === "prompt") handler.prompt = template.hookValue ?? "Validate this action";
+    else handler.prompt = template.hookValue ?? "";
+    addHook(event, matcher, handler);
+  }}
+  onclose={() => (galleryOpen = false)}
+/>

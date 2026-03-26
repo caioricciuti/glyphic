@@ -9,8 +9,9 @@
   import {
     Sparkles, Bot, Plus, Search, X, Trash2,
     Zap, Server, Brain, Shield, Wrench, BookOpen,
-    Terminal, Eye, EyeOff, GitFork, Database,
+    Terminal, Eye, EyeOff, GitFork, Database, LayoutGrid,
   } from "lucide-svelte";
+  import TemplateGallery from "$lib/components/shared/TemplateGallery.svelte";
 
   let activeTab = $state<"skills" | "agents">("skills");
   let scope = $state<"global" | "project">("global");
@@ -27,6 +28,7 @@
   let saving = $state(false);
   let saveMessage = $state<string | null>(null);
   let previewMode = $state(false);
+  let galleryOpen = $state(false);
 
   // Delete
   let deleteDialogOpen = $state(false);
@@ -155,23 +157,6 @@
     loadItems();
   }
 
-  // Templates
-  const SKILL_TEMPLATES = [
-    { name: "code-review", desc: "Review code for quality and best practices", content: "---\nname: code-review\ndescription: Review code for quality, bugs, and best practices\nuser-invocable: true\nargument-hint: \"[file or PR]\"\n---\n\nReview the specified code for:\n- Logic errors and edge cases\n- Performance issues\n- Security vulnerabilities\n- Code style and readability\n\nProvide actionable feedback with specific line references.\n" },
-    { name: "deploy", desc: "Deploy application to environment", content: "---\nname: deploy\ndescription: Deploy the application\ndisable-model-invocation: true\nuser-invocable: true\nargument-hint: \"[environment]\"\nallowed-tools: Bash\n---\n\n## Deploy to $ARGUMENTS\n\n1. Run tests\n2. Build the application\n3. Deploy to $ARGUMENTS environment\n4. Verify deployment\n" },
-    { name: "explain-code", desc: "Explain code in detail", content: "---\nname: explain-code\ndescription: Explain code structure and logic\nuser-invocable: true\nargument-hint: \"[file path]\"\ncontext: fork\nagent: Explore\n---\n\nExplain $ARGUMENTS in detail:\n1. What it does\n2. How it works\n3. Key patterns used\n4. Dependencies\n" },
-    { name: "test-runner", desc: "Run and analyze tests", content: "---\nname: test-runner\ndescription: Run tests and analyze results\nuser-invocable: true\nallowed-tools: Bash, Read\n---\n\nRun the project's test suite:\n1. Identify the test framework\n2. Run all tests\n3. Analyze failures\n4. Suggest fixes for failing tests\n" },
-  ];
-
-  const AGENT_TEMPLATES = [
-    { name: "bug-fixer", desc: "Investigate and fix bugs", content: "---\nname: bug-fixer\ndescription: Investigate and fix reported bugs\nmodel: opus\neffort: high\ntools: Read, Glob, Grep, Edit, Bash\npermissions: acceptEdits\n---\n\nYou are an expert debugger. When given a bug report:\n1. Reproduce the issue by reading relevant code\n2. Identify the root cause\n3. Implement a minimal fix\n4. Verify the fix doesn't break existing tests\n" },
-    { name: "security-auditor", desc: "Security review of code", content: "---\nname: security-auditor\ndescription: Audit code for security vulnerabilities\nmodel: opus\ntools: Read, Glob, Grep\npermissions: plan\nmemory: project\n---\n\nYou are a security expert. Analyze code for:\n- OWASP Top 10 vulnerabilities\n- Injection attacks (SQL, XSS, command)\n- Authentication/authorization flaws\n- Secrets in code\n- Dependency vulnerabilities\n\nProvide severity ratings and remediation steps.\n" },
-    { name: "docs-generator", desc: "Generate documentation", content: "---\nname: docs-generator\ndescription: Generate comprehensive documentation\nmodel: sonnet\ntools: Read, Glob, Grep, Write\nskills:\n  - code-review\n---\n\nYou generate documentation. For each file/module:\n1. Read and understand the code\n2. Generate JSDoc/TSDoc comments\n3. Create README sections\n4. Add usage examples\n" },
-    { name: "performance-optimizer", desc: "Optimize code performance", content: "---\nname: performance-optimizer\ndescription: Analyze and optimize code performance\nmodel: opus\ntools: Read, Glob, Grep, Edit, Bash\nmemory: project\n---\n\nYou are a performance expert. When analyzing code:\n1. Profile hot paths\n2. Identify bottlenecks (O(n²), unnecessary allocations, etc.)\n3. Suggest optimizations with benchmarks\n4. Implement changes\n" },
-  ];
-
-  const templates = $derived(activeTab === "skills" ? SKILL_TEMPLATES : AGENT_TEMPLATES);
-
   onMount(loadItems);
 </script>
 
@@ -252,39 +237,24 @@
           </button>
         {/each}
 
-        {#if filteredItems.length === 0 && !isNew}
-          <!-- Templates -->
-          <div class="px-3 py-3 space-y-2">
-            <p class="text-xs text-text-muted">No {activeTab}. Try a template:</p>
-            {#each templates as tpl}
-              <button
-                class="w-full text-left p-2 bg-bg-tertiary border border-border rounded-md hover:border-accent/30 transition-colors"
-                onclick={async () => {
-                  const pp = needsProject ? projectPath ?? undefined : undefined;
-                  if (activeTab === "skills") await api.skills.write(scope, tpl.name, tpl.content, pp);
-                  else await api.agents.write(scope, tpl.name, tpl.content, pp);
-                  await loadItems();
-                  const found = items.find((i) => i.name === tpl.name);
-                  if (found) selectItem(found);
-                }}
-              >
-                <p class="text-xs font-medium text-accent">{tpl.name}</p>
-                <p class="text-[10px] text-text-muted">{tpl.desc}</p>
-              </button>
-            {/each}
-          </div>
-        {/if}
       {/if}
     </div>
 
-    <!-- Create button -->
-    <div class="p-3 border-t border-border">
+    <!-- Create + Templates buttons -->
+    <div class="p-3 border-t border-border flex gap-2">
       <button
-        class="w-full flex items-center justify-center gap-1.5 py-2 text-xs bg-accent hover:bg-accent-hover text-white rounded-md transition-colors"
+        class="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs bg-accent hover:bg-accent-hover text-white rounded-md transition-colors"
         onclick={startCreate}
       >
         <Plus size={14} />
-        Create {isAgent ? "Agent" : "Skill"}
+        Create
+      </button>
+      <button
+        class="flex items-center justify-center gap-1.5 px-3 py-2 text-xs bg-bg-tertiary border border-border rounded-md text-text-secondary hover:border-accent/30 hover:text-accent transition-colors"
+        onclick={() => (galleryOpen = true)}
+      >
+        <LayoutGrid size={14} />
+        Templates
       </button>
     </div>
   </div>
@@ -564,3 +534,22 @@
     {/if}
   </div>
 </div>
+
+<TemplateGallery
+  open={galleryOpen}
+  defaultCategory={activeTab === "skills" ? "skill" : "agent"}
+  onselect={async (template) => {
+    const pp = needsProject ? projectPath ?? undefined : undefined;
+    const name = template.name.toLowerCase().replace(/\s+/g, "-");
+    const content = template.content ?? "";
+    if (template.category === "agent") {
+      await api.agents.write(scope, name, content, pp);
+    } else {
+      await api.skills.write(scope, name, content, pp);
+    }
+    await loadItems();
+    const found = items.find((i) => i.name === name);
+    if (found) selectItem(found);
+  }}
+  onclose={() => (galleryOpen = false)}
+/>

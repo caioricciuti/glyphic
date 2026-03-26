@@ -5,7 +5,8 @@
   import ProjectPicker from "$lib/components/shared/ProjectPicker.svelte";
   import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
   import { getSelectedProjectPath } from "$lib/stores/project-context.svelte";
-  import { Server, Plus, Cloud, Terminal, Globe, Trash2, Edit3, X } from "lucide-svelte";
+  import { Server, Plus, Cloud, Terminal, Globe, Trash2, Edit3, X, LayoutGrid } from "lucide-svelte";
+  import TemplateGallery from "$lib/components/shared/TemplateGallery.svelte";
 
   interface ServerEntry {
     name: string;
@@ -30,17 +31,10 @@
 
   // Delete
   let deletingServerName = $state<string | null>(null);
+  let galleryOpen = $state(false);
 
   const projectPath = $derived(getSelectedProjectPath());
   const needsProject = $derived(scope !== "global");
-
-  // MCP Templates
-  const TEMPLATES = [
-    { name: "filesystem", label: "Filesystem", desc: "Read/write local files", type: "stdio" as const, command: "npx", args: "-y @modelcontextprotocol/server-filesystem /path/to/dir" },
-    { name: "github", label: "GitHub", desc: "GitHub API access", type: "stdio" as const, command: "npx", args: "-y @modelcontextprotocol/server-github" },
-    { name: "postgres", label: "PostgreSQL", desc: "Query PostgreSQL databases", type: "stdio" as const, command: "npx", args: "-y @modelcontextprotocol/server-postgres postgresql://localhost/mydb" },
-    { name: "memory", label: "Memory", desc: "Persistent memory store", type: "stdio" as const, command: "npx", args: "-y @modelcontextprotocol/server-memory" },
-  ];
 
   async function loadServers() {
     if (needsProject && !projectPath) { loading = false; servers = []; return; }
@@ -78,7 +72,7 @@
     }
   }
 
-  function newServer(template?: typeof TEMPLATES[0]) {
+  function newServer(template?: { name: string; type: "stdio" | "sse"; command: string; args: string }) {
     editing = { name: "", config: {} };
     isNew = true;
     formName = template?.name ?? "";
@@ -155,6 +149,13 @@
         {#if saveMessage}
           <span class="text-xs {saveMessage.startsWith('Error') ? 'text-danger' : 'text-success'}">{saveMessage}</span>
         {/if}
+        <button
+          class="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-bg-tertiary border border-border rounded-md text-text-secondary hover:border-accent/30 hover:text-accent transition-colors"
+          onclick={() => (galleryOpen = true)}
+        >
+          <LayoutGrid size={14} />
+          Templates
+        </button>
         <button
           class="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-accent hover:bg-accent-hover text-white rounded-md transition-colors"
           onclick={() => newServer()}
@@ -242,27 +243,11 @@
           <div class="bg-bg-secondary border border-border rounded-lg p-8 text-center">
             <Server size={24} class="mx-auto mb-3 opacity-20 text-text-muted" />
             <p class="text-sm text-text-muted mb-1">No local MCP servers configured</p>
-            <p class="text-xs text-text-muted">Add a server or use a template below</p>
+            <p class="text-xs text-text-muted">Add a server or browse templates</p>
           </div>
         {/if}
       </div>
 
-      <!-- Templates -->
-      <div>
-        <h3 class="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">Templates</h3>
-        <div class="grid grid-cols-2 gap-2">
-          {#each TEMPLATES as tpl}
-            <button
-              class="text-left p-3 bg-bg-secondary border border-border rounded-lg hover:border-accent/30 transition-colors"
-              onclick={() => newServer(tpl)}
-            >
-              <p class="text-sm font-medium text-accent">{tpl.label}</p>
-              <p class="text-xs text-text-muted">{tpl.desc}</p>
-              <p class="text-[10px] text-text-muted font-mono mt-1 truncate">{tpl.command} {tpl.args}</p>
-            </button>
-          {/each}
-        </div>
-      </div>
     {/if}
   </div>
 
@@ -326,3 +311,24 @@
     </div>
   {/if}
 </div>
+
+<TemplateGallery
+  open={galleryOpen}
+  defaultCategory="mcp"
+  onselect={async (template) => {
+    const name = template.name.toLowerCase().replace(/\s+/g, "-");
+    if (template.mcpUrl) {
+      const pp = needsProject ? projectPath ?? undefined : undefined;
+      await api.mcp.upsert(scope, name, { url: template.mcpUrl }, pp);
+      await loadServers();
+    } else {
+      newServer({
+        name,
+        type: (template.mcpType ?? "stdio") as "stdio" | "sse",
+        command: template.mcpCommand ?? "",
+        args: template.mcpArgs ?? "",
+      });
+    }
+  }}
+  onclose={() => (galleryOpen = false)}
+/>
