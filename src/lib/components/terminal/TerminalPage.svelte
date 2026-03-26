@@ -60,8 +60,10 @@
     });
   }
 
+  let resizeTimer: ReturnType<typeof setTimeout> | null = null;
   function handleResize() {
-    fitActiveSession();
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => fitActiveSession(), 100);
   }
 
   onMount(() => {

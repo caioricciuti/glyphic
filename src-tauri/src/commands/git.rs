@@ -60,13 +60,14 @@ pub fn git_status(path: String) -> Result<GitStatus, String> {
     let files: Vec<GitFileChange> = porcelain
         .lines()
         .filter(|l| !l.is_empty())
-        .map(|line| {
+        .filter_map(|line| {
+            if line.len() < 4 { return None; }
             let status = line[..2].trim().to_string();
             let file_path = line[3..].to_string();
-            GitFileChange {
+            Some(GitFileChange {
                 status,
                 path: file_path,
-            }
+            })
         })
         .collect();
 
@@ -156,7 +157,10 @@ pub fn git_init(path: String) -> Result<String, String> {
 #[tauri::command]
 pub fn open_in_terminal(path: String) -> Result<(), String> {
     // macOS: open Terminal.app with a script that cd's to the path and runs claude
-    let script = format!("cd '{}' && claude", path);
+    // Escape single quotes in path to prevent injection
+    let safe_path = path.replace('\'', "'\\''");
+    let script = format!("cd '{}' && claude", safe_path);
+    let escaped_script = script.replace('\\', "\\\\").replace('"', "\\\"");
     Command::new("osascript")
         .args([
             "-e",
@@ -165,7 +169,7 @@ pub fn open_in_terminal(path: String) -> Result<(), String> {
                     activate
                     do script \"{}\"
                 end tell",
-                script.replace('"', "\\\"")
+                escaped_script
             ),
         ])
         .spawn()
