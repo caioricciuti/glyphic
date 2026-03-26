@@ -11,6 +11,9 @@
 
   let sessions = $state<SessionSummary[]>([]);
   let loading = $state(true);
+  let loadingMore = $state(false);
+  let hasMore = $state(false);
+  let totalCount = $state(0);
   let searchQuery = $state("");
   let selectedSession = $state<SessionSummary | null>(null);
   let events = $state<SessionEvent[]>([]);
@@ -171,9 +174,26 @@
     visibleCount = displayEvents.length;
   }
 
+  async function loadMore() {
+    loadingMore = true;
+    try {
+      const result = await api.sessions.list(10, sessions.length);
+      sessions = [...sessions, ...result.sessions];
+      hasMore = result.has_more;
+      totalCount = result.total;
+    } catch (e) {
+      console.error("Failed:", e);
+    } finally {
+      loadingMore = false;
+    }
+  }
+
   onMount(async () => {
     try {
-      sessions = await api.sessions.list();
+      const result = await api.sessions.list(10, 0);
+      sessions = result.sessions;
+      hasMore = result.has_more;
+      totalCount = result.total;
     } catch (e) {
       console.error("Failed:", e);
     } finally {
@@ -224,6 +244,19 @@
             </div>
           </button>
         {/each}
+
+        <!-- Load more -->
+        {#if hasMore}
+          <div class="p-3">
+            <button
+              class="w-full py-2 text-xs bg-bg-tertiary border border-border rounded-md text-text-secondary hover:border-accent/30 transition-colors disabled:opacity-50"
+              onclick={loadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore ? "Loading..." : `Load more (${sessions.length}/${totalCount})`}
+            </button>
+          </div>
+        {/if}
       {/if}
     </div>
   </div>

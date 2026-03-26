@@ -121,7 +121,8 @@ export const api = {
   },
 
   sessions: {
-    list: () => invoke<SessionSummary[]>("list_sessions"),
+    list: (limit?: number, offset?: number) =>
+      invoke<SessionListResult>("list_sessions", { limit, offset }),
     load: (path: string) => invoke<SessionEvent[]>("load_session", { path }),
   },
 
@@ -168,6 +169,12 @@ export interface GitLogEntry {
   message: string;
   author: string;
   date: string;
+}
+
+export interface SessionListResult {
+  sessions: SessionSummary[];
+  total: number;
+  has_more: boolean;
 }
 
 export interface SessionSummary {
