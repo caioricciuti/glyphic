@@ -5,6 +5,8 @@ mod pty;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(pty::PtyState::default())
         .invoke_handler(tauri::generate_handler![
             // Settings

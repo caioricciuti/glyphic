@@ -43,7 +43,15 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://github.com https://api.github.com"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/caioricciuti/glyphic/releases/latest/download/latest.json"
+      ],
+      "pubkey": ""
     }
   }
 }

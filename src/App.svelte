@@ -1,6 +1,7 @@
 <script lang="ts">
   import Sidebar from "$lib/components/layout/Sidebar.svelte";
   import Header from "$lib/components/layout/Header.svelte";
+  import UpdateBanner from "$lib/components/layout/UpdateBanner.svelte";
   import DashboardPage from "$lib/components/dashboard/DashboardPage.svelte";
   import SettingsPage from "$lib/components/settings/SettingsPage.svelte";
   import HooksPage from "$lib/components/hooks/HooksPage.svelte";
@@ -24,6 +25,7 @@
   <Sidebar />
 
   <main class="flex flex-col flex-1 min-w-0">
+    <UpdateBanner />
     <Header />
 
     <div class="flex-1 overflow-hidden">

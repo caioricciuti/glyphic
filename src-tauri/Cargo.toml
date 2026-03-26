@@ -20,4 +20,6 @@ glob = "0.3"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 portable-pty = "0.8"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 base64 = "0.22"
