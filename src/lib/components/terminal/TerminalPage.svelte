@@ -81,7 +81,7 @@
 
 <div class="flex flex-col h-full">
   <!-- Tab bar -->
-  <div class="flex items-center gap-1 px-3 py-2 border-b border-border bg-bg-secondary shrink-0 overflow-x-auto">
+  <div class="flex items-center gap-1 px-3 py-2 border-b border-border bg-bg-secondary shrink-0 overflow-x-auto relative z-10">
     {#each sessions as session}
       <div
         class="flex items-center gap-1.5 pl-3 pr-1 py-1.5 text-xs rounded-md transition-colors shrink-0 cursor-pointer
