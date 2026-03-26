@@ -80,47 +80,50 @@
 </script>
 
 <div class="flex flex-col h-full">
-  <!-- Tab bar -->
-  <div class="flex items-center gap-1 px-3 py-2 border-b border-border bg-bg-secondary shrink-0 overflow-x-auto relative z-10">
-    {#each sessions as session}
-      <div
-        class="flex items-center gap-1.5 pl-3 pr-1 py-1.5 text-xs rounded-md transition-colors shrink-0 cursor-pointer
-          {activeId === session.id
-            ? 'bg-bg-tertiary text-text-primary'
-            : 'text-text-muted hover:text-text-secondary hover:bg-bg-hover'}"
-        role="tab"
-        tabindex="0"
-        onclick={() => handleTabSwitch(session.id)}
-        onkeydown={(e) => e.key === "Enter" && handleTabSwitch(session.id)}
-      >
-        <span class="w-1.5 h-1.5 rounded-full {session.alive ? 'bg-success' : 'bg-text-muted'}"></span>
-        <span class="max-w-24 truncate">{session.projectName}</span>
-        <button
-          class="ml-1 p-0.5 rounded hover:bg-bg-hover text-text-muted hover:text-danger"
-          onclick={(e) => { e.stopPropagation(); handleClose(session.id); }}
-          aria-label="Close session"
-        >
-          <X size={12} />
-        </button>
-      </div>
-    {/each}
-
-    <!-- New session -->
-    <div class="flex items-center gap-2 ml-1">
+  <!-- Top bar: project picker + new -->
+  <div class="flex items-center justify-between px-4 py-3 border-b border-border bg-bg-secondary shrink-0">
+    <div class="flex items-center gap-3">
       <ProjectPicker onselect={() => {}} />
       <button
         class="px-3 py-1.5 text-xs bg-accent hover:bg-accent-hover text-white rounded-md transition-colors disabled:opacity-50 shrink-0"
         onclick={startNew}
         disabled={!projectPath || starting}
       >
-        {starting ? "..." : "+ New"}
+        {starting ? "Starting..." : "+ New Session"}
       </button>
     </div>
-
     {#if error}
-      <span class="text-xs text-danger ml-2 shrink-0">{error}</span>
+      <span class="text-xs text-danger">{error}</span>
     {/if}
   </div>
+
+  <!-- Session tabs -->
+  {#if sessions.length > 0}
+    <div class="flex items-center gap-1 px-3 py-1.5 border-b border-border bg-bg-secondary/50 shrink-0 overflow-x-auto">
+      {#each sessions as session}
+        <div
+          class="flex items-center gap-1.5 pl-3 pr-1 py-1 text-xs rounded-md transition-colors shrink-0 cursor-pointer
+            {activeId === session.id
+              ? 'bg-bg-tertiary text-text-primary'
+              : 'text-text-muted hover:text-text-secondary hover:bg-bg-hover'}"
+          role="tab"
+          tabindex="0"
+          onclick={() => handleTabSwitch(session.id)}
+          onkeydown={(e) => e.key === "Enter" && handleTabSwitch(session.id)}
+        >
+          <span class="w-1.5 h-1.5 rounded-full {session.alive ? 'bg-success' : 'bg-text-muted'}"></span>
+          <span class="max-w-32 truncate">{session.projectName}</span>
+          <button
+            class="ml-1 p-0.5 rounded hover:bg-bg-hover text-text-muted hover:text-danger"
+            onclick={(e) => { e.stopPropagation(); handleClose(session.id); }}
+            aria-label="Close session"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      {/each}
+    </div>
+  {/if}
 
   <!-- Terminal area -->
   <div class="flex-1 relative bg-[#0d1117]">
