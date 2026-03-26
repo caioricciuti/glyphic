@@ -61,8 +61,19 @@ Branch switcher, grouped file changes (modified/added/deleted/untracked with col
 ### Terminal
 Embedded Claude Code terminal via PTY + xterm.js. Sessions persist when navigating away. Multi-tab support for concurrent sessions across different projects. Full ANSI rendering -- colors, progress bars, everything Claude Code outputs works perfectly.
 
+### Session Replay
+Browse and replay past Claude Code sessions step by step. See every user message, Claude's responses, tool calls (Bash, Read, Write, etc.), and tool outputs. Replay button animates through events in sequence. Paginated loading for large sessions.
+
+### Templates
+Unified template gallery with 30+ pre-built configurations across skills, agents, rules, hooks, and MCP servers. Always accessible from every page. One-click to add.
+
 ### Analytics
 Token usage and cost tracking per model. Daily token trend and hourly activity charts with hover tooltips. Cache efficiency visualization with interactive segmented bar. Cost-per-message metric.
+
+### Other
+- **Light/Dark theme** toggle with persisted preference
+- **Auto-updates** — notified of new versions, one-click update
+- **Apple-signed** macOS builds — no Gatekeeper warnings
 
 ## Installation
 
@@ -75,15 +86,9 @@ Go to [Releases](https://github.com/caioricciuti/glyphic/releases) and download 
 - **Windows**: `.msi` installer or `.exe` setup
 - **Linux**: `.deb` package, `.AppImage`, or `.rpm`
 
-### macOS: "App is damaged" fix
+macOS builds are **signed and notarized** with an Apple Developer certificate. Just download, drag to Applications, and open.
 
-Since the app isn't code-signed with an Apple Developer certificate, macOS will show a warning when you first open it. After installing, run this in Terminal:
-
-```bash
-xattr -cr /Applications/Glyphic.app
-```
-
-Then open Glyphic normally. You only need to do this once.
+The app includes **auto-updates** — you'll be notified when a new version is available and can update in one click.
 
 ### Prerequisites
 
