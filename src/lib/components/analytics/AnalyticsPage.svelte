@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api } from "$lib/tauri/commands";
-  import { formatNumber } from "$lib/utils/format";
+  import { formatNumber, formatCost } from "$lib/utils/format";
+  import type { CostSummary } from "$lib/tauri/commands";
   import { DollarSign, Coins, Clock, Calendar, TrendingUp, Cpu, Zap, Database } from "lucide-svelte";
 
   interface ModelUsage {
@@ -29,7 +30,12 @@
   }
 
   let stats = $state<FullStats | null>(null);
+  let costData = $state<CostSummary | null>(null);
   let loading = $state(true);
+
+  const planType = $derived(costData?.plan_type ?? "max");
+  const isApiPlan = $derived(planType === "api");
+  const costLabel = $derived(isApiPlan ? "Estimated Cost" : "API Equivalent");
 
   // Tooltips
   let chartTooltip = $state<{ x: number; y: number; label: string; value: string } | null>(null);
@@ -135,8 +141,14 @@
   });
 
   onMount(async () => {
-    try { stats = (await api.stats.get()) as FullStats; }
-    catch (e) { console.error("Failed:", e); }
+    try {
+      const [s, c] = await Promise.all([
+        api.stats.get(),
+        api.budget.getCostSummary(),
+      ]);
+      stats = s as FullStats;
+      costData = c;
+    } catch (e) { console.error("Failed:", e); }
     finally { loading = false; }
   });
 </script>
@@ -150,7 +162,7 @@
     <!-- Top Stats -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
       {#each [
-        { label: "Estimated Cost", value: `$${totalCost().toFixed(2)}`, sub: `$${costPerMessage().toFixed(4)}/message`, icon: DollarSign, color: "text-accent" },
+        { label: costLabel, value: formatCost(totalCost()), sub: `${formatCost(costPerMessage())}/message${!isApiPlan ? " · " + planType.charAt(0).toUpperCase() + planType.slice(1) + " Plan" : ""}`, icon: DollarSign, color: "text-accent" },
         { label: "Total Tokens", value: formatTokens(totalTokens()), sub: `avg ${formatTokens(avgDailyTokens())}/day`, icon: Coins, color: "text-info" },
         { label: "Longest Session", value: stats.longestSession ? formatDuration(stats.longestSession.duration) : "—", sub: stats.longestSession ? `${formatNumber(stats.longestSession.messageCount)} messages` : "", icon: Clock, color: "text-warning" },
         { label: "Active Since", value: stats.firstSessionDate ? new Date(stats.firstSessionDate).toLocaleDateString("en", { month: "short", year: "numeric" }) : "—", sub: stats.firstSessionDate ? `${Math.floor((Date.now() - new Date(stats.firstSessionDate).getTime()) / 86400000)} days ago` : "", icon: Calendar, color: "text-success" },
@@ -185,7 +197,7 @@
                 <span class="text-sm font-mono text-text-primary">{entry.model}</span>
                 <span class="text-xs text-text-muted">({pct.toFixed(1)}%)</span>
               </div>
-              <span class="text-sm font-semibold text-accent">${entry.cost.toFixed(2)}</span>
+              <span class="text-sm font-semibold text-accent">{formatCost(entry.cost)}</span>
             </div>
 
             <!-- Token breakdown -->
@@ -293,7 +305,7 @@
         </div>
         <div>
           <p class="text-xs text-text-muted mb-1">Estimated Savings</p>
-          <p class="text-2xl font-bold text-success">${cacheSavedCost.toFixed(2)}</p>
+          <p class="text-2xl font-bold text-success">{formatCost(cacheSavedCost)}</p>
           <p class="text-[10px] text-text-muted mt-1">vs. full-price input tokens</p>
         </div>
       </div>

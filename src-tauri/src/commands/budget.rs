@@ -3,10 +3,26 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize)]
 pub struct BudgetSettings {
     pub daily_limit: Option<f64>,
     pub monthly_limit: Option<f64>,
+    #[serde(default = "default_plan")]
+    pub plan_type: String,
+}
+
+fn default_plan() -> String {
+    "max".to_string()
+}
+
+impl Default for BudgetSettings {
+    fn default() -> Self {
+        Self {
+            daily_limit: None,
+            monthly_limit: None,
+            plan_type: default_plan(),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -20,6 +36,7 @@ pub struct CostSummary {
     pub monthly_exceeded: bool,
     pub monthly_projection: f64,
     pub per_project_month: Vec<ProjectCost>,
+    pub plan_type: String,
 }
 
 #[derive(Serialize)]
@@ -71,8 +88,13 @@ pub fn get_budget() -> Result<BudgetSettings, String> {
 }
 
 #[tauri::command]
-pub fn set_budget(daily_limit: Option<f64>, monthly_limit: Option<f64>) -> Result<(), String> {
-    let settings = BudgetSettings { daily_limit, monthly_limit };
+pub fn set_budget(daily_limit: Option<f64>, monthly_limit: Option<f64>, plan_type: Option<String>) -> Result<(), String> {
+    let existing = get_budget().unwrap_or_default();
+    let settings = BudgetSettings {
+        daily_limit,
+        monthly_limit,
+        plan_type: plan_type.unwrap_or(existing.plan_type),
+    };
     let content = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("failed to serialize: {e}"))?;
     fs::write(glyphic_settings_path(), content)
@@ -216,5 +238,6 @@ pub fn get_cost_summary() -> Result<CostSummary, String> {
         monthly_exceeded: budget.monthly_limit.map_or(false, |l| month_cost >= l),
         monthly_projection,
         per_project_month,
+        plan_type: budget.plan_type,
     })
 }

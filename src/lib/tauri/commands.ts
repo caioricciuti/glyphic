@@ -122,8 +122,8 @@ export const api = {
 
   budget: {
     get: () => invoke<BudgetSettings>("get_budget"),
-    set: (dailyLimit: number | null, monthlyLimit: number | null) =>
-      invoke<void>("set_budget", { dailyLimit, monthlyLimit }),
+    set: (dailyLimit: number | null, monthlyLimit: number | null, planType?: string) =>
+      invoke<void>("set_budget", { dailyLimit, monthlyLimit, planType }),
     getCostSummary: () => invoke<CostSummary>("get_cost_summary"),
   },
 
@@ -182,6 +182,7 @@ export interface GitLogEntry {
 export interface BudgetSettings {
   daily_limit: number | null;
   monthly_limit: number | null;
+  plan_type: string;
 }
 
 export interface CostSummary {
@@ -194,6 +195,7 @@ export interface CostSummary {
   monthly_exceeded: boolean;
   monthly_projection: number;
   per_project_month: ProjectCost[];
+  plan_type: string;
 }
 
 export interface ProjectCost {
