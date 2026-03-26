@@ -60,6 +60,9 @@ pub fn run() {
             commands::git::git_checkout,
             commands::git::git_init,
             commands::git::open_in_terminal,
+            // Sessions
+            commands::sessions::list_sessions,
+            commands::sessions::load_session,
             // Terminal PTY
             pty::spawn_terminal,
             pty::write_terminal,

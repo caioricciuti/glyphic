@@ -6,6 +6,7 @@ pub mod memory;
 pub mod plugins;
 pub mod projects;
 pub mod rules;
+pub mod sessions;
 pub mod settings;
 pub mod skills;
 pub mod stats;

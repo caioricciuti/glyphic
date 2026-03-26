@@ -8,7 +8,7 @@
   import {
     BarChart3, Settings as SettingsIcon, Zap, BookOpen, Brain,
     Server, Sparkles, Shield, Puzzle, GitBranch, TerminalSquare, Activity,
-    LayoutGrid, Sun, Moon,
+    LayoutGrid, Sun, Moon, History,
   } from "lucide-svelte";
   import { getTheme, toggleTheme } from "$lib/stores/theme.svelte";
 
@@ -31,6 +31,7 @@
     shield: Shield,
     puzzle: Puzzle,
     git: GitBranch,
+    sessions: History,
     templates: LayoutGrid,
     terminal: TerminalSquare,
     analytics: Activity,

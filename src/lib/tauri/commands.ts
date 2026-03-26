@@ -120,6 +120,11 @@ export const api = {
     install: (name: string) => invoke<string>("install_plugin", { name }),
   },
 
+  sessions: {
+    list: () => invoke<SessionSummary[]>("list_sessions"),
+    load: (path: string) => invoke<SessionEvent[]>("load_session", { path }),
+  },
+
   git: {
     status: (path: string) =>
       invoke<GitStatus>("git_status", { path }),
@@ -163,4 +168,23 @@ export interface GitLogEntry {
   message: string;
   author: string;
   date: string;
+}
+
+export interface SessionSummary {
+  id: string;
+  project_hash: string;
+  project_path: string;
+  path: string;
+  entry_count: number;
+  user_messages: number;
+  tool_calls: number;
+  first_timestamp: string | null;
+  last_timestamp: string | null;
+  first_message: string | null;
+}
+
+export interface SessionEvent {
+  type: string;
+  timestamp: string | null;
+  content: Record<string, unknown>;
 }
