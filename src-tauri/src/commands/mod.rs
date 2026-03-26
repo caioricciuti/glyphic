@@ -1,3 +1,4 @@
+pub mod budget;
 pub mod git;
 pub mod hooks;
 pub mod instructions;

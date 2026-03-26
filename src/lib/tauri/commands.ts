@@ -120,6 +120,13 @@ export const api = {
     install: (name: string) => invoke<string>("install_plugin", { name }),
   },
 
+  budget: {
+    get: () => invoke<BudgetSettings>("get_budget"),
+    set: (dailyLimit: number | null, monthlyLimit: number | null) =>
+      invoke<void>("set_budget", { dailyLimit, monthlyLimit }),
+    getCostSummary: () => invoke<CostSummary>("get_cost_summary"),
+  },
+
   sessions: {
     list: (limit?: number, offset?: number) =>
       invoke<SessionListResult>("list_sessions", { limit, offset }),
@@ -170,6 +177,29 @@ export interface GitLogEntry {
   message: string;
   author: string;
   date: string;
+}
+
+export interface BudgetSettings {
+  daily_limit: number | null;
+  monthly_limit: number | null;
+}
+
+export interface CostSummary {
+  today: number;
+  this_month: number;
+  last_7_days: number[];
+  daily_limit: number | null;
+  monthly_limit: number | null;
+  daily_exceeded: boolean;
+  monthly_exceeded: boolean;
+  monthly_projection: number;
+  per_project_month: ProjectCost[];
+}
+
+export interface ProjectCost {
+  project: string;
+  cost: number;
+  messages: number;
 }
 
 export interface SessionListResult {

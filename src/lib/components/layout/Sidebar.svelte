@@ -11,11 +11,13 @@
     LayoutGrid, Sun, Moon, History,
   } from "lucide-svelte";
   import { getTheme, toggleTheme } from "$lib/stores/theme.svelte";
+  import type { CostSummary } from "$lib/tauri/commands";
 
   const currentPage = $derived(getCurrentPage());
 
   let stats = $state<StatsCache | null>(null);
   let settings = $state<Settings | null>(null);
+  let costSummary = $state<CostSummary | null>(null);
 
   const xp = $derived(calculateXP(stats, settings));
   const xpPct = $derived(Math.min((xp.currentXP / xp.nextLevelXP) * 100, 100));
@@ -41,12 +43,14 @@
 
   onMount(async () => {
     try {
-      const [s, set] = await Promise.all([
+      const [s, set, cost] = await Promise.all([
         api.stats.computeLive(),
         api.settings.read("global"),
+        api.budget.getCostSummary(),
       ]);
       stats = s as StatsCache;
       settings = set;
+      costSummary = cost;
     } catch {
       // Silently fail — sidebar XP is non-critical
     }
@@ -85,6 +89,34 @@
       </button>
     {/each}
   </nav>
+
+  <!-- Cost Widget -->
+  {#if costSummary}
+    <div class="px-4 py-2 border-t border-border">
+      <div class="flex items-center justify-between text-xs mb-1">
+        <span class="text-text-muted">Today</span>
+        <span class="font-medium {costSummary.daily_exceeded ? 'text-danger' : 'text-text-primary'}">
+          ${costSummary.today.toFixed(2)}
+        </span>
+      </div>
+      <div class="flex items-center justify-between text-xs mb-1.5">
+        <span class="text-text-muted">This month</span>
+        <span class="font-medium text-text-primary">${costSummary.this_month.toFixed(2)}</span>
+      </div>
+      <!-- Mini sparkline -->
+      {#if costSummary.last_7_days.length > 0}
+        {@const max = Math.max(...costSummary.last_7_days, 0.01)}
+        <div class="flex items-end gap-px h-4">
+          {#each costSummary.last_7_days as val}
+            <div class="flex-1 bg-accent/40 rounded-t-sm" style="height: {Math.max((val / max) * 100, 5)}%"></div>
+          {/each}
+        </div>
+      {/if}
+      {#if costSummary.daily_exceeded || costSummary.monthly_exceeded}
+        <p class="text-[10px] text-danger mt-1">Budget exceeded!</p>
+      {/if}
+    </div>
+  {/if}
 
   <!-- Theme toggle -->
   <div class="px-4 py-2 border-t border-border">

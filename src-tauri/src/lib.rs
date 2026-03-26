@@ -7,6 +7,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(pty::PtyState::default())
         .invoke_handler(tauri::generate_handler![
             // Settings
@@ -62,6 +63,10 @@ pub fn run() {
             commands::git::git_checkout,
             commands::git::git_init,
             commands::git::open_in_terminal,
+            // Budget
+            commands::budget::get_budget,
+            commands::budget::set_budget,
+            commands::budget::get_cost_summary,
             // Sessions
             commands::sessions::list_sessions,
             commands::sessions::load_session,
