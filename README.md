@@ -26,6 +26,73 @@
 
 Glyphic gives you a visual interface to configure, manage, and use [Claude Code](https://docs.anthropic.com/en/docs/claude-code) -- the AI coding assistant from Anthropic. Instead of editing JSON files and markdown by hand, Glyphic lets you manage everything through a modern desktop app.
 
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/dashboard.png" width="800" alt="Dashboard">
+  <br><em>Dashboard — Live stats, XP levels, streaks, activity heatmap, achievements</em>
+</p>
+
+<details>
+<summary>View all screenshots</summary>
+
+<p align="center">
+  <img src="screenshots/settings.png" width="800" alt="Settings">
+  <br><em>Settings — Global and project configuration with model selector</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/hooks.png" width="800" alt="Hooks">
+  <br><em>Hooks — Event sidebar with hook cards and quick-add templates</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/instructions.png" width="800" alt="Instructions">
+  <br><em>Instructions — CLAUDE.md editor with preview and clickable @imports</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/memory.png" width="800" alt="Memory">
+  <br><em>Memory — Project memory browser with card grid and editor</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/skills.png" width="800" alt="Skills & Agents">
+  <br><em>Skills & Agents — Detail view with config cards and connections</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/rules.png" width="800" alt="Rules">
+  <br><em>Rules — Contextual rules with path filters and templates</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/mcp.png" width="800" alt="MCP Servers">
+  <br><em>MCP Servers — Cloud and local MCP management with templates</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/plugins.png" width="800" alt="Plugins">
+  <br><em>Plugins — Browse marketplace, install plugins, manage installed</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/git.png" width="800" alt="Git">
+  <br><em>Git — Branch switcher, conventional commits, commit timeline</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/terminal.png" width="800" alt="Terminal">
+  <br><em>Terminal — Embedded Claude Code with persistent multi-tab sessions</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/analytics.png" width="800" alt="Analytics">
+  <br><em>Analytics — Token costs, daily trends, hourly activity, cache efficiency</em>
+</p>
+
+</details>
+
 ## Features
 
 ### Dashboard
