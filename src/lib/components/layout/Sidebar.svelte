@@ -195,7 +195,7 @@
       <img src={logoUrl} alt="Glyphic" class="w-20 h-20 rounded-2xl mx-auto mb-4" />
       <h2 class="text-xl font-bold text-text-primary">Glyphic</h2>
       <p class="text-sm text-text-muted mt-1">AI Config Manager for Claude Code</p>
-      <p class="text-xs text-text-muted mt-1">Version 0.5.0</p>
+      <p class="text-xs text-text-muted mt-1">Version 0.7.0</p>
 
       <div class="mt-6 space-y-2">
         <a
