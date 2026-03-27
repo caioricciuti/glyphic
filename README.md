@@ -128,19 +128,25 @@ Branch switcher, grouped file changes (modified/added/deleted/untracked with col
 ### Terminal
 Embedded Claude Code terminal via PTY + xterm.js. Sessions persist when navigating away. Multi-tab support for concurrent sessions across different projects. Full ANSI rendering -- colors, progress bars, everything Claude Code outputs works perfectly.
 
+### Pipelines
+Visual workflow builder powered by Svelte Flow. Drag-and-drop node canvas with zoom, pan, and minimap. 8 node types: Claude Prompt, Bash Command, GitHub Action, HTTP Request, Transform, Delay, Input, Output. Connect nodes to chain data flow -- use `{{input}}` or `{{NodeName}}` to reference outputs. Async execution with real-time status updates on the canvas. Save, load, and manage multiple pipelines.
+
 ### Session Replay
-Browse and replay past Claude Code sessions step by step. See every user message, Claude's responses, tool calls (Bash, Read, Write, etc.), and tool outputs. Replay button animates through events in sequence. Paginated loading for large sessions.
+Browse and replay past Claude Code sessions step by step. Full-text search across all sessions. Tag sessions (bug-fix, feature, refactor). Export as Markdown. Live session detection with green pulse. Paginated loading for large sessions.
 
 ### Templates
 Unified template gallery with 30+ pre-built configurations across skills, agents, rules, hooks, and MCP servers. Always accessible from every page. One-click to add.
 
 ### Analytics
-Token usage and cost tracking per model. Daily token trend and hourly activity charts with hover tooltips. Cache efficiency visualization with interactive segmented bar. Cost-per-message metric.
+Token usage and cost tracking per model with plan-aware labels (Max/Pro/API). Daily token trend and hourly activity charts with hover tooltips. Cache efficiency visualization. Cost monitoring widget in sidebar with budget alerts.
 
 ### Other
 - **Light/Dark theme** toggle with persisted preference
 - **Auto-updates** — notified of new versions, one-click update
 - **Apple-signed** macOS builds — no Gatekeeper warnings
+- **Cost monitoring** — sidebar widget with daily/monthly costs and budget alerts
+- **Storage maintenance** — disk usage breakdown with one-click cleanup
+- **About dialog** — version, author, links
 
 ## Installation
 
