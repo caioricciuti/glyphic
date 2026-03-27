@@ -65,7 +65,7 @@ fn price_cache_read(model: &str) -> f64 {
     else { 1.5 }
 }
 
-fn price_cache_write(model: &str) -> f64 {
+fn _price_cache_write(model: &str) -> f64 {
     if model.contains("haiku") { 1.25 }
     else if model.contains("sonnet") { 3.75 }
     else { 18.75 }
@@ -143,7 +143,7 @@ pub fn get_cost_summary() -> Result<CostSummary, String> {
             .as_secs() as i64;
         // Simple date computation
         let days = now / 86400;
-        let era = if days + 719468 >= 0 { (days + 719468) } else { days + 719468 - 146096 } / 146097;
+        let era = if days + 719468 >= 0 { days + 719468 } else { days + 719468 - 146096 } / 146097;
         let doe = ((days + 719468) - era * 146097) as u32;
         let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
         let y = yoe as i64 + era * 400;
