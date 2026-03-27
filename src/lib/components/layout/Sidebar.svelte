@@ -30,6 +30,7 @@
   import { getTheme, toggleTheme } from "$lib/stores/theme.svelte";
   import type { CostSummary } from "$lib/tauri/commands";
   import { ExternalLink, GitBranch as GithubIcon, X as XIcon } from "lucide-svelte";
+  import logoUrl from "$lib/assets/logo.png";
 
   let showAbout = $state(false);
 
@@ -85,7 +86,7 @@
     class="flex items-center gap-2 px-4 py-[13.5px] border-b border-border w-full hover:bg-bg-hover transition-colors text-left"
     onclick={() => (showAbout = true)}
   >
-    <img src="/favicon.png" alt="Glyphic" class="w-8 h-8 rounded-lg" />
+    <img src={logoUrl} alt="Glyphic" class="w-8 h-8 rounded-lg" />
     <div>
       <h1 class="text-sm font-semibold text-text-primary">Glyphic</h1>
       <p class="text-xs text-text-muted">AI Config Manager</p>
@@ -190,7 +191,7 @@
         <XIcon size={16} />
       </button>
 
-      <img src="/favicon.png" alt="Glyphic" class="w-20 h-20 rounded-2xl mx-auto mb-4" />
+      <img src={logoUrl} alt="Glyphic" class="w-20 h-20 rounded-2xl mx-auto mb-4" />
       <h2 class="text-xl font-bold text-text-primary">Glyphic</h2>
       <p class="text-sm text-text-muted mt-1">AI Config Manager for Claude Code</p>
       <p class="text-xs text-text-muted mt-1">Version 0.4.0</p>
