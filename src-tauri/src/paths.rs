@@ -1,21 +1,76 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+/// Try to resolve a binary via a shell's login environment.
+fn resolve_via_shell(shell: &str, binary: &str) -> Option<String> {
+    std::process::Command::new(shell)
+        .args(["-lc", &format!("which {binary}")])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| {
+            let path = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if !path.is_empty() && Path::new(&path).exists() {
+                Some(path)
+            } else {
+                None
+            }
+        })
+}
+
 /// Resolve the full path to the `claude` CLI binary.
-/// macOS GUI apps don't inherit the user's shell PATH, so we ask a login shell to find it.
+/// macOS GUI apps don't inherit the user's shell PATH, so we try multiple strategies:
+/// 1. Ask zsh (macOS default shell, sources .zshrc/.zprofile)
+/// 2. Ask sh (POSIX fallback, sources .profile)
+/// 3. Check known installation directories directly
 /// Cached for the lifetime of the process.
 pub fn claude_bin() -> &'static str {
     static BIN: OnceLock<String> = OnceLock::new();
     BIN.get_or_init(|| {
-        std::process::Command::new("sh")
-            .args(["-lc", "which claude"])
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "claude".to_string())
+        // Try shells: zsh sources .zshrc (where most users add PATH), sh sources .profile
+        for shell in ["zsh", "sh"] {
+            if let Some(path) = resolve_via_shell(shell, "claude") {
+                return path;
+            }
+        }
+        // Check known install locations explicitly
+        if let Some(home) = dirs::home_dir() {
+            for subpath in [".local/bin/claude", ".claude/local/bin/claude"] {
+                let p = home.join(subpath);
+                if p.exists() {
+                    return p.to_string_lossy().to_string();
+                }
+            }
+        }
+        for p in ["/usr/local/bin/claude", "/opt/homebrew/bin/claude"] {
+            if Path::new(p).exists() {
+                return p.to_string();
+            }
+        }
+        "claude".to_string()
     })
+}
+
+/// Return an enriched PATH that includes common user binary directories.
+/// macOS GUI apps inherit a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin).
+/// This adds ~/.local/bin, ~/.bun/bin, /opt/homebrew/bin, etc. so subprocess
+/// spawns can find user-installed tools (claude, git, node, bun, etc.).
+pub fn enriched_path() -> String {
+    let home = dirs::home_dir().unwrap_or_default();
+    let extra_dirs = [
+        home.join(".local/bin"),
+        home.join(".bun/bin"),
+        home.join(".cargo/bin"),
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+    ];
+    let system_path = std::env::var("PATH").unwrap_or_default();
+    let mut parts: Vec<String> = extra_dirs.iter()
+        .filter(|p| p.is_dir())
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+    parts.push(system_path);
+    parts.join(":")
 }
 
 pub fn claude_home() -> PathBuf {

@@ -115,7 +115,9 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &std
         "bash" | "github" => {
             let raw = node.config.get("command").and_then(|c| c.as_str()).unwrap_or("echo 'no command'");
             let command = substitute_vars(raw, ctx, all_outputs);
-            let output = std::process::Command::new("sh").args(["-c", &command]).output()
+            let output = std::process::Command::new("sh").args(["-c", &command])
+                .env("PATH", paths::enriched_path())
+                .output()
                 .map_err(|e| format!("failed: {e}"))?;
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -133,6 +135,7 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &std
             } else { prompt };
             let output = std::process::Command::new(paths::claude_bin())
                 .args(["--print", &full])
+                .env("PATH", paths::enriched_path())
                 .env("CLAUDE_NO_TELEMETRY", "1")
                 .output()
                 .map_err(|e| format!("failed: {e}"))?;
@@ -175,7 +178,9 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &std
                 args.push("-I".to_string());
             }
             args.push(url.to_string());
-            let output = std::process::Command::new("curl").args(&args).output()
+            let output = std::process::Command::new("curl").args(&args)
+                .env("PATH", paths::enriched_path())
+                .output()
                 .map_err(|e| format!("failed: {e}"))?;
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -229,7 +234,7 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &std
                 _ => {}
             }
             let mut cmd = std::process::Command::new("git");
-            cmd.args(&args);
+            cmd.args(&args).env("PATH", paths::enriched_path());
             if operation != "clone" {
                 cmd.current_dir(&path);
             }
@@ -464,6 +469,12 @@ pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> R
     });
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn run_single_node(node: PipelineNode, context: Option<String>) -> Result<String, String> {
+    let all_outputs = std::collections::HashMap::new();
+    execute_node(&node, &context, &all_outputs)
 }
 
 fn chrono_now() -> String {

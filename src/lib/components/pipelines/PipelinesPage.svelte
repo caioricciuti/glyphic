@@ -68,6 +68,31 @@
     { label: "Weekly (Mon 9am)", value: "0 9 * * 1" },
   ];
 
+  // Single node test
+  let testingNode = $state(false);
+  let testResult = $state<{ output: string; error: boolean } | null>(null);
+
+  async function testSelectedNode() {
+    if (!selectedNode) return;
+    testingNode = true;
+    testResult = null;
+    try {
+      const node = {
+        id: selectedNode.id,
+        type: selectedNode.type ?? "bash",
+        label: (selectedNode.data as Record<string, string>).label ?? "",
+        x: 0, y: 0,
+        config: (selectedNode.data as Record<string, Record<string, string>>).config ?? {},
+      };
+      const output = await invoke<string>("run_single_node", { node, context: null });
+      testResult = { output, error: false };
+    } catch (e) {
+      testResult = { output: `${e}`, error: true };
+    } finally {
+      testingNode = false;
+    }
+  }
+
   // Node icons lookup
   const NODE_ICONS: Record<string, { icon: typeof Bot; color: string }> = {
     claude: { icon: Bot, color: "text-accent" },
@@ -603,6 +628,15 @@
                   </div>
                   <div class="flex items-center gap-1">
                     <button
+                      class="flex items-center gap-1 px-2 py-1 text-[10px] rounded {testingNode ? 'bg-warning/20 text-warning' : 'bg-success/20 text-success hover:bg-success/30'}"
+                      onclick={testSelectedNode}
+                      disabled={testingNode}
+                      title="Test this node"
+                    >
+                      <Play size={10} />
+                      {testingNode ? "..." : "Test"}
+                    </button>
+                    <button
                       class="p-1.5 text-text-muted hover:text-danger rounded"
                       onclick={deleteSelectedNode}
                       aria-label="Delete node"
@@ -612,7 +646,7 @@
                     </button>
                     <button
                       class="p-1.5 text-text-muted hover:text-text-primary rounded"
-                      onclick={() => (selectedNode = null)}
+                      onclick={() => { selectedNode = null; testResult = null; }}
                       aria-label="Close"
                     >
                       <X size={14} />
@@ -954,6 +988,19 @@
                       />
                     </label>
                     <p class="text-[10px] text-text-muted">Extract a value from JSON. Use dot notation: <code class="text-accent">data.items[0].name</code></p>
+                  </div>
+                {/if}
+
+                <!-- Test result -->
+                {#if testResult}
+                  <div class="border-t border-border pt-3 mt-2">
+                    <div class="flex items-center justify-between mb-1">
+                      <span class="text-[10px] font-medium {testResult.error ? 'text-danger' : 'text-success'}">
+                        {testResult.error ? "Error" : "Test Output"}
+                      </span>
+                      <button class="text-[10px] text-text-muted hover:text-text-primary" onclick={() => (testResult = null)}>Clear</button>
+                    </div>
+                    <pre class="text-[10px] text-text-secondary font-mono whitespace-pre-wrap max-h-40 overflow-y-auto bg-bg-tertiary rounded p-2">{testResult.output.slice(0, 1000)}{testResult.output.length > 1000 ? "..." : ""}</pre>
                   </div>
                 {/if}
               </div>
