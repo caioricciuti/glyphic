@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api } from "$lib/tauri/commands";
-  import type { SessionSummary, SessionEvent } from "$lib/tauri/commands";
+  import type { SessionSummary, SessionEvent, SearchResult, SessionTags, LiveSession } from "$lib/tauri/commands";
   import { marked } from "marked";
   import {
     History, Search, Play, Pause, ChevronDown, ChevronRight,
     User, Bot, Terminal, Pencil, Eye, Folder, Code,
     Wrench, Globe, Zap, Brain, Clock, MessageSquare, Hash,
+    Tag, FileDown, Radio, Check, X,
   } from "lucide-svelte";
 
   let sessions = $state<SessionSummary[]>([]);
@@ -21,6 +22,23 @@
   let loadingMoreEvents = $state(false);
   let hasMoreEvents = $state(false);
   let totalEvents = $state(0);
+
+  // Search
+  let searchResults = $state<SearchResult[]>([]);
+  let searching = $state(false);
+  let searchMode = $state(false);
+
+  // Tags
+  let sessionTags = $state<SessionTags>({ tags: {}, notes: {} });
+  let showTagEditor = $state(false);
+  let editTagInput = $state("");
+
+  // Export
+  let exportedMd = $state<string | null>(null);
+  let copiedExport = $state(false);
+
+  // Live sessions
+  let liveSessions = $state<LiveSession[]>([]);
 
   // Replay controls
   let playing = $state(false);
@@ -197,6 +215,55 @@
     visibleCount = displayEvents.length;
   }
 
+  async function doSearch() {
+    if (!searchQuery.trim()) { searchMode = false; searchResults = []; return; }
+    searching = true;
+    searchMode = true;
+    try {
+      searchResults = await api.sessions.search(searchQuery, 20);
+    } catch (e) { console.error("Search failed:", e); }
+    finally { searching = false; }
+  }
+
+  async function loadTags() {
+    try { sessionTags = await api.sessions.getTags(); } catch { /* silent */ }
+  }
+
+  async function addTag(tag: string) {
+    if (!selectedSession || !tag.trim()) return;
+    const current = sessionTags.tags[selectedSession.id] ?? [];
+    if (!current.includes(tag.trim())) {
+      await api.sessions.setTag(selectedSession.id, [...current, tag.trim()]);
+      await loadTags();
+    }
+    editTagInput = "";
+  }
+
+  async function removeTag(tag: string) {
+    if (!selectedSession) return;
+    const current = (sessionTags.tags[selectedSession.id] ?? []).filter((t) => t !== tag);
+    await api.sessions.setTag(selectedSession.id, current);
+    await loadTags();
+  }
+
+  async function exportSession() {
+    if (!selectedSession) return;
+    try {
+      exportedMd = await api.sessions.exportMarkdown(selectedSession.path);
+      await navigator.clipboard.writeText(exportedMd);
+      copiedExport = true;
+      setTimeout(() => (copiedExport = false), 2000);
+    } catch (e) { console.error("Export failed:", e); }
+  }
+
+  async function detectLive() {
+    try { liveSessions = await api.sessions.detectLive(); } catch { /* silent */ }
+  }
+
+  function isLive(path: string): boolean {
+    return liveSessions.some((l) => l.path === path);
+  }
+
   async function loadMore() {
     loadingMore = true;
     try {
@@ -211,17 +278,27 @@
     }
   }
 
-  onMount(async () => {
-    try {
-      const result = await api.sessions.list(10, 0);
-      sessions = result.sessions;
-      hasMore = result.has_more;
-      totalCount = result.total;
-    } catch (e) {
-      console.error("Failed:", e);
-    } finally {
-      loading = false;
-    }
+  let liveInterval: ReturnType<typeof setInterval> | null = null;
+
+  onMount(() => {
+    (async () => {
+      try {
+        const [result] = await Promise.all([
+          api.sessions.list(10, 0),
+          loadTags(),
+          detectLive(),
+        ]);
+        sessions = result.sessions;
+        hasMore = result.has_more;
+        totalCount = result.total;
+      } catch (e) {
+        console.error("Failed:", e);
+      } finally {
+        loading = false;
+      }
+    })();
+    liveInterval = setInterval(detectLive, 30000);
+    return () => { if (liveInterval) clearInterval(liveInterval); };
   });
 </script>
 
@@ -231,24 +308,71 @@
     <div class="p-3 border-b border-border">
       <div class="relative">
         <Search size={14} class="absolute left-2.5 top-2 text-text-muted" />
-        <input type="text" class="w-full pl-8 pr-3 py-1.5 text-xs bg-bg-tertiary border border-border rounded-md text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent" placeholder="Search sessions..." bind:value={searchQuery} />
+        <input type="text" class="w-full pl-8 pr-3 py-1.5 text-xs bg-bg-tertiary border border-border rounded-md text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent" placeholder="Search all sessions..." bind:value={searchQuery} onkeydown={(e) => e.key === "Enter" && doSearch()} />
+        {#if searchQuery.trim()}
+          <button class="absolute right-2 top-1.5 text-text-muted hover:text-accent" onclick={doSearch} aria-label="Search">
+            <Search size={12} />
+          </button>
+        {/if}
       </div>
     </div>
 
     <div class="flex-1 overflow-y-auto">
-      {#if loading}
+      <!-- Live sessions -->
+      {#if liveSessions.length > 0 && !searchMode}
+        <div class="px-3 py-2 border-b border-border">
+          <p class="text-[10px] text-success uppercase tracking-wider flex items-center gap-1 mb-1">
+            <Radio size={10} class="animate-pulse" /> Live ({liveSessions.length})
+          </p>
+          {#each liveSessions as live}
+            <div class="flex items-center gap-2 text-xs text-text-secondary py-0.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span>
+              <span class="truncate">{live.project_path.split("/").pop()}</span>
+              <span class="text-[10px] text-text-muted ml-auto">{live.modified_secs_ago}s ago</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      <!-- Search results -->
+      {#if searchMode}
+        <div class="px-3 py-2 border-b border-border flex items-center justify-between">
+          <span class="text-xs text-text-muted">{searching ? "Searching..." : `${searchResults.length} results`}</span>
+          <button class="text-xs text-accent" onclick={() => { searchMode = false; searchQuery = ""; }}>Clear</button>
+        </div>
+        {#each searchResults as result}
+          <button
+            class="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-bg-hover"
+            onclick={() => {
+              const found = sessions.find((s) => s.id === result.session_id);
+              if (found) selectSession(found);
+            }}
+          >
+            <div class="flex items-center gap-2">
+              <Search size={10} class="text-accent shrink-0" />
+              <span class="text-xs text-text-primary truncate">{result.project_path.split("/").pop()}</span>
+            </div>
+            <p class="text-[10px] text-text-secondary mt-0.5 ml-[18px] line-clamp-2">{result.snippet}</p>
+          </button>
+        {/each}
+      {:else if loading}
         <p class="text-xs text-text-muted text-center py-4">Loading sessions...</p>
       {:else if filteredSessions.length === 0}
         <p class="text-xs text-text-muted text-center py-4">No sessions found</p>
       {:else}
         {#each filteredSessions as session}
+          {@const tags = sessionTags.tags[session.id] ?? []}
           <button
             class="w-full text-left px-3 py-3 border-b border-border/50 transition-colors
               {selectedSession?.id === session.id ? 'bg-accent/10' : 'hover:bg-bg-hover'}"
             onclick={() => selectSession(session)}
           >
             <div class="flex items-center gap-2 mb-1">
-              <History size={12} class="text-accent shrink-0" />
+              {#if isLive(session.path)}
+                <span class="w-2 h-2 rounded-full bg-success animate-pulse shrink-0"></span>
+              {:else}
+                <History size={12} class="text-accent shrink-0" />
+              {/if}
               <span class="text-xs font-medium text-text-primary truncate">
                 {session.project_path.split("/").pop()}
               </span>
@@ -258,6 +382,13 @@
             </div>
             {#if session.first_message}
               <p class="text-xs text-text-secondary truncate ml-[20px]">"{session.first_message}"</p>
+            {/if}
+            {#if tags.length > 0}
+              <div class="flex gap-1 mt-1 ml-[20px]">
+                {#each tags as tag}
+                  <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-accent/10 text-accent">{tag}</span>
+                {/each}
+              </div>
             {/if}
             <div class="flex gap-3 mt-1 ml-[20px] text-[10px] text-text-muted">
               <span>{session.user_messages} msgs</span>
@@ -315,6 +446,27 @@
             <span class="flex items-center gap-1"><Clock size={10} />{formatDuration(selectedSession.first_timestamp, selectedSession.last_timestamp)}</span>
             <span class="flex items-center gap-1"><Hash size={10} />{displayEvents.length} events</span>
           </div>
+          <!-- Export -->
+          <button
+            class="flex items-center gap-1 px-2 py-1.5 text-xs bg-bg-tertiary border border-border rounded-md text-text-secondary hover:border-accent/30 transition-colors"
+            onclick={exportSession}
+            title="Export as Markdown + copy to clipboard"
+          >
+            {#if copiedExport}
+              <Check size={12} class="text-success" />
+            {:else}
+              <FileDown size={12} />
+            {/if}
+            Export
+          </button>
+          <!-- Tags -->
+          <button
+            class="flex items-center gap-1 px-2 py-1.5 text-xs bg-bg-tertiary border border-border rounded-md text-text-secondary hover:border-accent/30 transition-colors"
+            onclick={() => (showTagEditor = !showTagEditor)}
+          >
+            <Tag size={12} />
+            Tag
+          </button>
           {#if !playing}
             <button
               class="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-accent hover:bg-accent-hover text-white rounded-md transition-colors"
@@ -334,6 +486,36 @@
           {/if}
         </div>
       </div>
+
+      <!-- Tag editor bar -->
+      {#if showTagEditor && selectedSession}
+        {@const currentTags = sessionTags.tags[selectedSession.id] ?? []}
+        <div class="flex items-center gap-2 px-6 py-2 border-b border-border bg-bg-secondary/50">
+          {#each currentTags as tag}
+            <span class="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent">
+              {tag}
+              <button class="hover:text-danger" onclick={() => removeTag(tag)} aria-label="Remove tag"><X size={10} /></button>
+            </span>
+          {/each}
+          <div class="flex items-center gap-1">
+            <input
+              type="text"
+              class="w-24 px-2 py-0.5 text-xs bg-bg-tertiary border border-border rounded text-text-primary focus:outline-none focus:border-accent"
+              placeholder="add tag..."
+              bind:value={editTagInput}
+              onkeydown={(e) => e.key === "Enter" && addTag(editTagInput)}
+            />
+            {#each ["bug-fix", "feature", "refactor"] as preset}
+              {#if !currentTags.includes(preset)}
+                <button
+                  class="text-[10px] px-1.5 py-0.5 rounded bg-bg-tertiary text-text-muted hover:text-accent"
+                  onclick={() => addTag(preset)}
+                >{preset}</button>
+              {/if}
+            {/each}
+          </div>
+        </div>
+      {/if}
 
       <!-- Event stream -->
       <div class="flex-1 overflow-y-auto px-6 py-4 space-y-3">

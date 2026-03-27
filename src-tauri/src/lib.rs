@@ -73,6 +73,11 @@ pub fn run() {
             // Sessions
             commands::sessions::list_sessions,
             commands::sessions::load_session,
+            commands::sessions::search_sessions,
+            commands::sessions::get_session_tags,
+            commands::sessions::set_session_tag,
+            commands::sessions::export_session_markdown,
+            commands::sessions::detect_live_sessions,
             // Terminal PTY
             pty::spawn_terminal,
             pty::write_terminal,

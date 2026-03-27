@@ -463,7 +463,7 @@
             </div>
           {:else}
             <button
-              class="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs bg-accent hover:bg-accent-hover text-white rounded-md transition-colors disabled:opacity-50"
+              class="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs rounded-md transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed bg-accent/10 text-accent hover:bg-accent/20"
               onclick={() => installTemplate(template)}
               disabled={installing === template.id}
             >

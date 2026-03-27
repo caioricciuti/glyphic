@@ -137,6 +137,14 @@ export const api = {
       invoke<SessionListResult>("list_sessions", { limit, offset }),
     load: (path: string, limit?: number, offset?: number) =>
       invoke<SessionLoadResult>("load_session", { path, limit, offset }),
+    search: (query: string, maxResults?: number) =>
+      invoke<SearchResult[]>("search_sessions", { query, maxResults }),
+    getTags: () => invoke<SessionTags>("get_session_tags"),
+    setTag: (sessionId: string, tags: string[], note?: string) =>
+      invoke<void>("set_session_tag", { sessionId, tags, note }),
+    exportMarkdown: (path: string) =>
+      invoke<string>("export_session_markdown", { path }),
+    detectLive: () => invoke<LiveSession[]>("detect_live_sessions"),
   },
 
   git: {
@@ -253,4 +261,24 @@ export interface SessionEvent {
   type: string;
   timestamp: string | null;
   content: Record<string, unknown>;
+}
+
+export interface SearchResult {
+  session_id: string;
+  project_path: string;
+  path: string;
+  snippet: string;
+  timestamp: string | null;
+  event_type: string;
+}
+
+export interface SessionTags {
+  tags: Record<string, string[]>;
+  notes: Record<string, string>;
+}
+
+export interface LiveSession {
+  path: string;
+  project_path: string;
+  modified_secs_ago: number;
 }
