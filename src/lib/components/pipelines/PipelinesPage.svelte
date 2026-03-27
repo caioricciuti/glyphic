@@ -6,26 +6,14 @@
   import { Plus, Save, Trash2, Play, Square, ChevronDown } from "lucide-svelte";
   import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
 
-  interface PipelineNode {
-    id: string;
-    type: string;
-    label: string;
-    x: number;
-    y: number;
-    config: Record<string, string>;
-  }
+  import type { Node, Edge } from "@xyflow/svelte";
 
-  interface PipelineConnection {
-    id: string;
-    from_node: string;
-    to_node: string;
-  }
-
-  interface Pipeline {
+  // Rust backend format
+  interface RustPipeline {
     id: string;
     name: string;
-    nodes: PipelineNode[];
-    connections: PipelineConnection[];
+    nodes: { id: string; type: string; label: string; x: number; y: number; config: Record<string, string> }[];
+    connections: { id: string; from_node: string; to_node: string }[];
     created_at: string;
     updated_at: string;
   }
@@ -40,8 +28,63 @@
     duration: number;
   }
 
-  let pipelines = $state<Pipeline[]>([]);
-  let activePipeline = $state<Pipeline | null>(null);
+  let pipelines = $state<RustPipeline[]>([]);
+  let activePipelineId = $state<string | null>(null);
+  let activePipelineName = $state("New Pipeline");
+  let flowNodes = $state<Node[]>([]);
+  let flowEdges = $state<Edge[]>([]);
+
+  // Convert Rust → Svelte Flow
+  function toFlowFormat(p: RustPipeline): { nodes: Node[]; edges: Edge[] } {
+    const nodes: Node[] = p.nodes.map((n) => ({
+      id: n.id,
+      type: n.type,
+      position: { x: n.x, y: n.y },
+      data: { label: n.label, config: n.config, status: "idle" },
+    }));
+    const edges: Edge[] = p.connections.map((c) => ({
+      id: c.id,
+      source: c.from_node,
+      target: c.to_node,
+      animated: true,
+      type: "smoothstep",
+    }));
+    return { nodes, edges };
+  }
+
+  // Convert Svelte Flow → Rust
+  function toRustFormat(): RustPipeline {
+    return {
+      id: activePipelineId ?? crypto.randomUUID(),
+      name: activePipelineName,
+      nodes: flowNodes.map((n) => ({
+        id: n.id,
+        type: n.type ?? "bash",
+        label: (n.data as Record<string, string>).label ?? "",
+        x: n.position.x,
+        y: n.position.y,
+        config: (n.data as Record<string, Record<string, string>>).config ?? {},
+      })),
+      connections: flowEdges.map((e) => ({
+        id: e.id,
+        from_node: e.source,
+        to_node: e.target,
+      })),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  function loadPipeline(p: RustPipeline) {
+    activePipelineId = p.id;
+    activePipelineName = p.name;
+    const { nodes, edges } = toFlowFormat(p);
+    flowNodes = nodes;
+    flowEdges = edges;
+    nodeStatuses = {};
+    results = [];
+    showResults = false;
+  }
   let saving = $state(false);
   let running = $state(false);
   let saveMessage = $state<string | null>(null);
@@ -52,27 +95,24 @@
   let showResults = $state(false);
 
   function createNew() {
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    activePipeline = {
-      id,
-      name: "New Pipeline",
-      nodes: [
-        { id: crypto.randomUUID(), type: "input", label: "Start", x: 100, y: 200, config: { variables: "" } },
-        { id: crypto.randomUUID(), type: "output", label: "End", x: 700, y: 200, config: {} },
-      ],
-      connections: [],
-      created_at: now,
-      updated_at: now,
-    };
+    activePipelineId = crypto.randomUUID();
+    activePipelineName = "New Pipeline";
+    flowNodes = [
+      { id: crypto.randomUUID(), type: "input", position: { x: 50, y: 200 }, data: { label: "Start", config: {}, status: "idle" } },
+      { id: crypto.randomUUID(), type: "output", position: { x: 600, y: 200 }, data: { label: "End", config: {}, status: "idle" } },
+    ];
+    flowEdges = [];
+    nodeStatuses = {};
+    results = [];
+    showResults = false;
   }
 
   async function savePipeline() {
-    if (!activePipeline) return;
+    if (!activePipelineId) return;
     saving = true;
     try {
-      activePipeline.updated_at = new Date().toISOString();
-      await invoke("save_pipeline", { pipeline: activePipeline });
+      const pipeline = toRustFormat();
+      await invoke("save_pipeline", { pipeline });
       saveMessage = "Saved!";
       setTimeout(() => (saveMessage = null), 2000);
       await loadPipelines();
@@ -84,10 +124,12 @@
   }
 
   async function deletePipeline() {
-    if (!activePipeline) return;
+    if (!activePipelineId) return;
     try {
-      await invoke("delete_pipeline", { id: activePipeline.id });
-      activePipeline = null;
+      await invoke("delete_pipeline", { id: activePipelineId });
+      activePipelineId = null;
+      flowNodes = [];
+      flowEdges = [];
       await loadPipelines();
     } catch (e) {
       console.error("Failed:", e);
@@ -99,7 +141,7 @@
   let eventUnlisten: UnlistenFn | null = null;
 
   async function runPipeline() {
-    if (!activePipeline) return;
+    if (!activePipelineId) return;
     running = true;
     results = [];
     showResults = true;
@@ -130,7 +172,7 @@
 
     // Fire and forget — Rust runs in a background thread
     try {
-      await invoke("start_pipeline_run", { pipeline: activePipeline });
+      await invoke("start_pipeline_run", { pipeline: toRustFormat() });
     } catch (e) {
       results = [...results, { nodeId: "", label: "Error", output: `${e}`, status: "error" as NodeStatus, duration: 0 }];
       running = false;
@@ -143,7 +185,7 @@
 
   async function loadPipelines() {
     try {
-      pipelines = await invoke<Pipeline[]>("list_pipelines");
+      pipelines = await invoke<RustPipeline[]>("list_pipelines");
     } catch (e) {
       console.error("Failed:", e);
     }
@@ -171,7 +213,7 @@
           class="flex items-center gap-2 px-3 py-1.5 text-sm bg-bg-tertiary border border-border rounded-md hover:border-border-light"
           onclick={() => (showPipelineList = !showPipelineList)}
         >
-          <span class="text-text-primary">{activePipeline?.name ?? "Select pipeline..."}</span>
+          <span class="text-text-primary">{activePipelineId ? activePipelineName : "Select pipeline..."}</span>
           <ChevronDown size={12} class="text-text-muted" />
         </button>
         {#if showPipelineList}
@@ -179,8 +221,8 @@
           <div class="absolute top-full left-0 mt-1 w-64 bg-bg-secondary border border-border rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
             {#each pipelines as pipeline}
               <button
-                class="w-full text-left px-3 py-2 text-sm hover:bg-bg-hover {activePipeline?.id === pipeline.id ? 'text-accent' : 'text-text-secondary'}"
-                onclick={() => { activePipeline = pipeline; showPipelineList = false; }}
+                class="w-full text-left px-3 py-2 text-sm hover:bg-bg-hover {activePipelineId === pipeline.id ? 'text-accent' : 'text-text-secondary'}"
+                onclick={() => { loadPipeline(pipeline); showPipelineList = false; }}
               >
                 {pipeline.name}
                 <span class="text-[10px] text-text-muted ml-1">{pipeline.nodes.length} nodes</span>
@@ -193,11 +235,11 @@
         {/if}
       </div>
 
-      {#if activePipeline}
+      {#if activePipelineId}
         <input
           type="text"
           class="px-2 py-1 text-sm bg-transparent border-b border-transparent hover:border-border focus:border-accent text-text-primary focus:outline-none"
-          bind:value={activePipeline.name}
+          bind:value={activePipelineName}
         />
       {/if}
 
@@ -210,7 +252,7 @@
       </button>
     </div>
 
-    {#if activePipeline}
+    {#if activePipelineId}
       <div class="flex items-center gap-2">
         {#if saveMessage}
           <span class="text-xs {saveMessage.startsWith('Error') ? 'text-danger' : 'text-success'}">{saveMessage}</span>
@@ -253,10 +295,10 @@
 
   <!-- Canvas -->
   <div class="flex-1 overflow-hidden">
-    {#if activePipeline}
+    {#if activePipelineId}
       <div class="flex h-full">
         <div class="flex-1">
-          <PipelineCanvas bind:nodes={activePipeline.nodes} bind:connections={activePipeline.connections} {nodeStatuses} />
+          <PipelineCanvas bind:nodes={flowNodes} bind:edges={flowEdges} {nodeStatuses} />
         </div>
 
         <!-- Results Panel -->
