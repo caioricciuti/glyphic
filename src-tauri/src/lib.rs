@@ -69,6 +69,10 @@ pub fn run() {
             commands::pipelines::delete_pipeline,
             commands::pipelines::start_pipeline_run,
             commands::pipelines::cancel_pipeline_run,
+            // Scheduler
+            commands::scheduler::enable_pipeline_schedule,
+            commands::scheduler::disable_pipeline_schedule,
+            commands::scheduler::list_pipeline_logs,
             // Maintenance
             commands::maintenance::get_disk_usage,
             commands::maintenance::cleanup_directory,

@@ -81,7 +81,7 @@ pub fn get_install_counts() -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 pub fn install_plugin(name: String) -> Result<String, String> {
-    let output = Command::new("claude")
+    let output = Command::new(paths::claude_bin())
         .args(["plugin", "install", &name])
         .output()
         .map_err(|e| format!("failed to run claude: {e}"))?;

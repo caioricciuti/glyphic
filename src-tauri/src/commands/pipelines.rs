@@ -2,7 +2,6 @@ use crate::paths;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use tauri::Emitter;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -31,10 +30,18 @@ pub struct Pipeline {
     pub connections: Vec<PipelineConnection>,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub schedule: Option<String>,
+    #[serde(default)]
+    pub schedule_enabled: bool,
+    #[serde(default)]
+    pub last_run: Option<String>,
+    #[serde(default)]
+    pub last_run_status: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
-struct PipelineStore {
+pub struct PipelineStore {
     pub pipelines: Vec<Pipeline>,
 }
 
@@ -42,7 +49,7 @@ fn store_path() -> std::path::PathBuf {
     paths::claude_home().join("glyphic-pipelines.json")
 }
 
-fn load_store() -> PipelineStore {
+pub fn load_store() -> PipelineStore {
     let path = store_path();
     if !path.exists() { return PipelineStore::default(); }
     fs::read_to_string(&path).ok()
@@ -50,7 +57,7 @@ fn load_store() -> PipelineStore {
         .unwrap_or_default()
 }
 
-fn save_store(store: &PipelineStore) -> Result<(), String> {
+pub fn save_store(store: &PipelineStore) -> Result<(), String> {
     let content = serde_json::to_string_pretty(store).map_err(|e| format!("{e}"))?;
     fs::write(store_path(), content).map_err(|e| format!("{e}"))
 }
@@ -124,7 +131,7 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &std
             let full = if let Some(c) = ctx {
                 format!("Context:\n{}\n\n{}", &c[..c.len().min(2000)], prompt)
             } else { prompt };
-            let output = std::process::Command::new("claude")
+            let output = std::process::Command::new(paths::claude_bin())
                 .args(["--print", &full])
                 .env("CLAUDE_NO_TELEMETRY", "1")
                 .output()
@@ -139,18 +146,40 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &std
             let method = node.config.get("method").and_then(|m| m.as_str()).unwrap_or("GET");
             let raw_body = node.config.get("body").and_then(|b| b.as_str()).unwrap_or("");
             let body = substitute_vars(raw_body, ctx, all_outputs);
-            // Use curl for simplicity
             let mut args = vec!["-s".to_string(), "-X".to_string(), method.to_string()];
-            if !body.is_empty() && method != "GET" {
+            // Parse custom headers from JSON array
+            if let Some(headers_str) = node.config.get("headers").and_then(|h| h.as_str()) {
+                let headers_raw = substitute_vars(headers_str, ctx, all_outputs);
+                if let Ok(headers) = serde_json::from_str::<Vec<serde_json::Value>>(&headers_raw) {
+                    for h in headers {
+                        let key = h.get("key").and_then(|k| k.as_str()).unwrap_or("");
+                        let val = h.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                        if !key.is_empty() {
+                            args.push("-H".to_string());
+                            args.push(format!("{key}: {val}"));
+                        }
+                    }
+                }
+            }
+            if !body.is_empty() && method != "GET" && method != "HEAD" {
                 args.push("-d".to_string());
                 args.push(body);
-                args.push("-H".to_string());
-                args.push("Content-Type: application/json".to_string());
+                // Auto-add Content-Type if not already set via headers
+                let has_content_type = args.iter().any(|a| a.to_lowercase().starts_with("content-type:"));
+                if !has_content_type {
+                    args.push("-H".to_string());
+                    args.push("Content-Type: application/json".to_string());
+                }
+            }
+            if method == "HEAD" {
+                args.push("-I".to_string());
             }
             args.push(url.to_string());
             let output = std::process::Command::new("curl").args(&args).output()
                 .map_err(|e| format!("failed: {e}"))?;
-            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            if stdout.is_empty() && !stderr.is_empty() { Err(stderr) } else { Ok(stdout) }
         }
         "transform" => {
             let operation = node.config.get("operation").and_then(|o| o.as_str()).unwrap_or("passthrough");
@@ -176,12 +205,163 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &std
             std::thread::sleep(std::time::Duration::from_secs(secs));
             Ok(ctx.unwrap_or("").to_string())
         }
+        "git" => {
+            let raw_path = node.config.get("path").and_then(|p| p.as_str()).unwrap_or(".");
+            let path = substitute_vars(raw_path, ctx, all_outputs);
+            let operation = node.config.get("operation").and_then(|o| o.as_str()).unwrap_or("status");
+            let branch = node.config.get("branch").and_then(|b| b.as_str()).unwrap_or("");
+            let message = node.config.get("message").and_then(|m| m.as_str()).unwrap_or("");
+            let mut args: Vec<String> = vec![operation.to_string()];
+            match operation {
+                "commit" => {
+                    args = vec!["commit".to_string(), "-am".to_string(), message.to_string()];
+                }
+                "checkout" => {
+                    if !branch.is_empty() { args.push(branch.to_string()); }
+                }
+                "clone" => {
+                    if !branch.is_empty() { args.push(branch.to_string()); }
+                    args.push(path.clone());
+                }
+                "log" => {
+                    args = vec!["log".to_string(), "--oneline".to_string(), "-20".to_string()];
+                }
+                _ => {}
+            }
+            let mut cmd = std::process::Command::new("git");
+            cmd.args(&args);
+            if operation != "clone" {
+                cmd.current_dir(&path);
+            }
+            let output = cmd.output().map_err(|e| format!("failed: {e}"))?;
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            if output.status.success() {
+                Ok(if stdout.is_empty() { stderr } else { stdout })
+            } else {
+                Err(format!("git error: {}", if stderr.is_empty() { stdout } else { stderr }))
+            }
+        }
+        "filter" => {
+            let input = ctx.unwrap_or("");
+            let condition = node.config.get("condition").and_then(|c| c.as_str()).unwrap_or("not_empty");
+            let raw_value = node.config.get("value").and_then(|v| v.as_str()).unwrap_or("");
+            let value = substitute_vars(raw_value, ctx, all_outputs);
+            let passes = match condition {
+                "not_empty" => !input.trim().is_empty(),
+                "empty" => input.trim().is_empty(),
+                "contains" => input.contains(&value),
+                "not_contains" => !input.contains(&value),
+                "equals" => input.trim() == value.trim(),
+                "not_equals" => input.trim() != value.trim(),
+                "regex" => {
+                    // Simple regex matching via grep
+                    let output = std::process::Command::new("sh")
+                        .args(["-c", &format!("echo {} | grep -qE {}", shell_escape(input), shell_escape(&value))])
+                        .output();
+                    output.map(|o| o.status.success()).unwrap_or(false)
+                }
+                _ => true,
+            };
+            if passes {
+                Ok(input.to_string())
+            } else {
+                Err(format!("Filter condition '{}' not met", condition))
+            }
+        }
+        "readfile" => {
+            let raw_path = node.config.get("path").and_then(|p| p.as_str()).unwrap_or("");
+            let path = substitute_vars(raw_path, ctx, all_outputs);
+            fs::read_to_string(&path).map_err(|e| format!("Read file error: {e}"))
+        }
+        "writefile" => {
+            let raw_path = node.config.get("path").and_then(|p| p.as_str()).unwrap_or("");
+            let path = substitute_vars(raw_path, ctx, all_outputs);
+            let mode = node.config.get("mode").and_then(|m| m.as_str()).unwrap_or("overwrite");
+            let content = ctx.unwrap_or("");
+            if mode == "append" {
+                use std::io::Write;
+                let mut file = std::fs::OpenOptions::new().create(true).append(true).open(&path)
+                    .map_err(|e| format!("Write file error: {e}"))?;
+                file.write_all(content.as_bytes()).map_err(|e| format!("Write error: {e}"))?;
+            } else {
+                fs::write(&path, content).map_err(|e| format!("Write file error: {e}"))?;
+            }
+            Ok(format!("Written to {path}"))
+        }
+        "notification" => {
+            let raw_title = node.config.get("title").and_then(|t| t.as_str()).unwrap_or("Pipeline");
+            let title = substitute_vars(raw_title, ctx, all_outputs);
+            let raw_body = node.config.get("body").and_then(|b| b.as_str()).unwrap_or("");
+            let body_text = substitute_vars(raw_body, ctx, all_outputs);
+            let body_final = if body_text.is_empty() { ctx.unwrap_or("").to_string() } else { body_text };
+            // Use osascript for macOS notification
+            let script = format!(
+                "display notification \"{}\" with title \"{}\"",
+                body_final.replace('\"', "\\\"").chars().take(200).collect::<String>(),
+                title.replace('\"', "\\\"")
+            );
+            std::process::Command::new("osascript").args(["-e", &script]).output()
+                .map_err(|e| format!("Notification failed: {e}"))?;
+            Ok(ctx.unwrap_or("").to_string())
+        }
+        "jsonextract" => {
+            let input = ctx.unwrap_or("{}");
+            let json_path = node.config.get("path").and_then(|p| p.as_str()).unwrap_or("");
+            let fallback = node.config.get("fallback").and_then(|f| f.as_str()).unwrap_or("");
+            let parsed: serde_json::Value = serde_json::from_str(input)
+                .map_err(|e| format!("JSON parse error: {e}"))?;
+            let result = traverse_json_path(&parsed, json_path);
+            match result {
+                Some(v) => Ok(match v {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                }),
+                None => {
+                    if fallback.is_empty() {
+                        Err(format!("Path '{}' not found in JSON", json_path))
+                    } else {
+                        Ok(fallback.to_string())
+                    }
+                }
+            }
+        }
         _ => Ok(ctx.unwrap_or("").to_string()),
     }
 }
 
+fn shell_escape(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Traverse a JSON value using dot-path notation like "data.items[0].name"
+fn traverse_json_path<'a>(value: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+    if path.is_empty() { return Some(value); }
+    let mut current = value;
+    for segment in path.split('.') {
+        // Handle array indexing like "items[0]"
+        if let Some(bracket_pos) = segment.find('[') {
+            let key = &segment[..bracket_pos];
+            if !key.is_empty() {
+                current = current.get(key)?;
+            }
+            // Parse all bracket indices
+            let mut rest = &segment[bracket_pos..];
+            while rest.starts_with('[') {
+                let end = rest.find(']')?;
+                let idx: usize = rest[1..end].parse().ok()?;
+                current = current.get(idx)?;
+                rest = &rest[end + 1..];
+            }
+        } else {
+            current = current.get(segment)?;
+        }
+    }
+    Some(current)
+}
+
 // Topological sort
-fn topo_sort(nodes: &[PipelineNode], connections: &[PipelineConnection]) -> Vec<String> {
+pub fn topo_sort(nodes: &[PipelineNode], connections: &[PipelineConnection]) -> Vec<String> {
     use std::collections::{HashMap, VecDeque};
     let mut adj: HashMap<String, Vec<String>> = HashMap::new();
     let mut in_deg: HashMap<String, usize> = HashMap::new();

@@ -42,7 +42,7 @@ pub fn spawn_terminal(
         })
         .map_err(|e| format!("failed to open pty: {e}"))?;
 
-    let mut cmd = CommandBuilder::new("claude");
+    let mut cmd = CommandBuilder::new(crate::paths::claude_bin());
     cmd.cwd(&path);
 
     // Set TERM for proper color support

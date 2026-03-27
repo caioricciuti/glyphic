@@ -1,4 +1,22 @@
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+/// Resolve the full path to the `claude` CLI binary.
+/// macOS GUI apps don't inherit the user's shell PATH, so we ask a login shell to find it.
+/// Cached for the lifetime of the process.
+pub fn claude_bin() -> &'static str {
+    static BIN: OnceLock<String> = OnceLock::new();
+    BIN.get_or_init(|| {
+        std::process::Command::new("sh")
+            .args(["-lc", "which claude"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "claude".to_string())
+    })
+}
 
 pub fn claude_home() -> PathBuf {
     dirs::home_dir()
