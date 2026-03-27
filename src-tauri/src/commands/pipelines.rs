@@ -82,9 +82,17 @@ pub fn delete_pipeline(id: String) -> Result<(), String> {
 pub fn run_pipeline_node(node_type: String, config: serde_json::Value, context: Option<String>) -> Result<String, String> {
     match node_type.as_str() {
         "bash" => {
-            let command = config.get("command").and_then(|c| c.as_str()).unwrap_or("echo 'no command'");
+            let raw_command = config.get("command").and_then(|c| c.as_str()).unwrap_or("echo 'no command'");
+            // Replace {{input}} with previous node's output
+            let command = if let Some(ref ctx) = context {
+                raw_command
+                    .replace("{{input}}", ctx)
+                    .replace("$INPUT", ctx)
+            } else {
+                raw_command.to_string()
+            };
             let output = std::process::Command::new("sh")
-                .args(["-c", command])
+                .args(["-c", &command])
                 .output()
                 .map_err(|e| format!("failed to run: {e}"))?;
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -118,9 +126,16 @@ pub fn run_pipeline_node(node_type: String, config: serde_json::Value, context: 
             }
         }
         "github" => {
-            let command = config.get("command").and_then(|c| c.as_str()).unwrap_or("gh --help");
+            let raw_command = config.get("command").and_then(|c| c.as_str()).unwrap_or("gh --help");
+            let command = if let Some(ref ctx) = context {
+                raw_command
+                    .replace("{{input}}", ctx)
+                    .replace("$INPUT", ctx)
+            } else {
+                raw_command.to_string()
+            };
             let output = std::process::Command::new("sh")
-                .args(["-c", command])
+                .args(["-c", &command])
                 .output()
                 .map_err(|e| format!("failed to run: {e}"))?;
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();

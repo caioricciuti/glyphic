@@ -147,7 +147,8 @@
     return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
   }
 
-  function onCanvasDoubleClick(e: MouseEvent) {
+  function onContextMenu(e: MouseEvent) {
+    e.preventDefault();
     const rect = canvasEl.getBoundingClientRect();
     addMenuPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     showAddMenu = true;
@@ -162,7 +163,7 @@
   tabindex="-1"
   onmousemove={onMouseMove}
   onmouseup={onMouseUp}
-  ondblclick={onCanvasDoubleClick}
+  oncontextmenu={onContextMenu}
   onclick={() => { selectedNode = null; showAddMenu = false; }}
 >
   <!-- Grid pattern -->
@@ -325,12 +326,14 @@
         {:else if node.type === "bash"}
           <label class="block">
             <span class="text-xs text-text-muted">Command</span>
-            <input type="text" class="w-full mt-0.5 px-2 py-1 text-sm bg-bg-tertiary border border-border rounded text-text-primary font-mono focus:outline-none focus:border-accent" placeholder="npm test" bind:value={node.config.command} />
+            <input type="text" class="w-full mt-0.5 px-2 py-1 text-sm bg-bg-tertiary border border-border rounded text-text-primary font-mono focus:outline-none focus:border-accent" placeholder='echo "{{input}}"' bind:value={node.config.command} />
+            <p class="text-[9px] text-text-muted mt-0.5">Use <code class="text-accent">{"{{input}}"}</code> to reference previous node's output</p>
           </label>
         {:else if node.type === "github"}
           <label class="block">
             <span class="text-xs text-text-muted">GitHub CLI Command</span>
             <input type="text" class="w-full mt-0.5 px-2 py-1 text-sm bg-bg-tertiary border border-border rounded text-text-primary font-mono focus:outline-none focus:border-accent" placeholder="gh pr list" bind:value={node.config.command} />
+            <p class="text-[9px] text-text-muted mt-0.5">Use <code class="text-accent">{"{{input}}"}</code> to reference previous node's output</p>
           </label>
         {/if}
       </div>
@@ -339,6 +342,6 @@
 
   <!-- Hint -->
   <div class="absolute bottom-3 right-3 text-[10px] text-text-muted opacity-50" style="z-index: 5">
-    Double-click to add node · Drag output port to connect
+    Right-click to add node · Drag output port to connect · Use {"{{input}}"} for chaining
   </div>
 </div>
