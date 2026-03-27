@@ -326,14 +326,14 @@
         {:else if node.type === "bash"}
           <label class="block">
             <span class="text-xs text-text-muted">Command</span>
-            <input type="text" class="w-full mt-0.5 px-2 py-1 text-sm bg-bg-tertiary border border-border rounded text-text-primary font-mono focus:outline-none focus:border-accent" placeholder='echo "{{input}}"' bind:value={node.config.command} />
-            <p class="text-[9px] text-text-muted mt-0.5">Use <code class="text-accent">{"{{input}}"}</code> to reference previous node's output</p>
+            <input type="text" class="w-full mt-0.5 px-2 py-1 text-sm bg-bg-tertiary border border-border rounded text-text-primary font-mono focus:outline-none focus:border-accent" placeholder={"echo '{{input}}'"} bind:value={node.config.command} />
+            <p class="text-[9px] text-text-muted mt-0.5">Use <code class="text-accent">{"{{"}input{"}}"}</code> to reference previous output</p>
           </label>
         {:else if node.type === "github"}
           <label class="block">
             <span class="text-xs text-text-muted">GitHub CLI Command</span>
             <input type="text" class="w-full mt-0.5 px-2 py-1 text-sm bg-bg-tertiary border border-border rounded text-text-primary font-mono focus:outline-none focus:border-accent" placeholder="gh pr list" bind:value={node.config.command} />
-            <p class="text-[9px] text-text-muted mt-0.5">Use <code class="text-accent">{"{{input}}"}</code> to reference previous node's output</p>
+            <p class="text-[9px] text-text-muted mt-0.5">Use <code class="text-accent">{"{{"}input{"}}"}</code> to reference previous output</p>
           </label>
         {/if}
       </div>
@@ -342,6 +342,6 @@
 
   <!-- Hint -->
   <div class="absolute bottom-3 right-3 text-[10px] text-text-muted opacity-50" style="z-index: 5">
-    Right-click to add node · Drag output port to connect · Use {"{{input}}"} for chaining
+    Right-click to add node · Drag output port to connect · Use {"{{"}input{"}}"} for chaining
   </div>
 </div>
