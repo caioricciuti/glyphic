@@ -14,6 +14,7 @@
     git: "Git",
     terminal: "Terminal",
     analytics: "Analytics",
+    pipelines: "Pipelines",
     sessions: "Sessions",
     templates: "Templates",
   };
@@ -31,6 +32,7 @@
     git: "Version control for your projects",
     terminal: "Interactive Claude Code session",
     analytics: "Token usage, costs, and session traces",
+    pipelines: "Visual workflow builder with Claude Code",
     sessions: "Replay and review past Claude Code sessions",
     templates: "Browse and add pre-built configurations",
   };

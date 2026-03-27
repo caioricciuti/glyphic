@@ -12,6 +12,7 @@
   import RulesPage from "$lib/components/rules/RulesPage.svelte";
   import PluginsPage from "$lib/components/plugins/PluginsPage.svelte";
   import GitPage from "$lib/components/git/GitPage.svelte";
+  import PipelinesPage from "$lib/components/pipelines/PipelinesPage.svelte";
   import SessionsPage from "$lib/components/sessions/SessionsPage.svelte";
   import TemplatesPage from "$lib/components/templates/TemplatesPage.svelte";
   import TerminalPage from "$lib/components/terminal/TerminalPage.svelte";
@@ -49,6 +50,8 @@
         <PluginsPage />
       {:else if currentPage === "git"}
         <GitPage />
+      {:else if currentPage === "pipelines"}
+        <PipelinesPage />
       {:else if currentPage === "sessions"}
         <SessionsPage />
       {:else if currentPage === "templates"}

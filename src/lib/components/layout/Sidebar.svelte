@@ -54,6 +54,7 @@
     shield: Shield,
     puzzle: Puzzle,
     git: GitBranch,
+    pipelines: Activity,
     sessions: History,
     templates: LayoutGrid,
     terminal: TerminalSquare,

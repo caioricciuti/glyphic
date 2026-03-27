@@ -12,7 +12,8 @@ export type Page =
   | "terminal"
   | "analytics"
   | "templates"
-  | "sessions";
+  | "sessions"
+  | "pipelines";
 
 export interface NavItem {
   id: Page;
@@ -31,6 +32,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "rules", label: "Rules", icon: "shield" },
   { id: "plugins", label: "Plugins", icon: "puzzle" },
   { id: "git", label: "Git", icon: "git" },
+  { id: "pipelines", label: "Pipelines", icon: "pipelines" },
   { id: "sessions", label: "Sessions", icon: "sessions" },
   { id: "templates", label: "Templates", icon: "templates" },
   { id: "terminal", label: "Terminal", icon: "terminal" },

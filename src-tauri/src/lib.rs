@@ -63,6 +63,11 @@ pub fn run() {
             commands::git::git_checkout,
             commands::git::git_init,
             commands::git::open_in_terminal,
+            // Pipelines
+            commands::pipelines::list_pipelines,
+            commands::pipelines::save_pipeline,
+            commands::pipelines::delete_pipeline,
+            commands::pipelines::run_pipeline_node,
             // Maintenance
             commands::maintenance::get_disk_usage,
             commands::maintenance::cleanup_directory,
