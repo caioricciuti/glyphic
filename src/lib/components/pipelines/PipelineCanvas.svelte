@@ -16,12 +16,15 @@
     to_node: string;
   }
 
+  type NodeStatus = "idle" | "running" | "done" | "error";
+
   interface Props {
     nodes: PipelineNode[];
     connections: PipelineConnection[];
+    nodeStatuses?: Record<string, NodeStatus>;
   }
 
-  let { nodes = $bindable(), connections = $bindable() }: Props = $props();
+  let { nodes = $bindable(), connections = $bindable(), nodeStatuses = {} }: Props = $props();
 
   let dragging = $state<{ nodeId: string; offsetX: number; offsetY: number } | null>(null);
   let connecting = $state<{ fromNode: string; mouseX: number; mouseY: number } | null>(null);
@@ -216,9 +219,13 @@
   <!-- Nodes -->
   {#each nodes as node (node.id)}
     {@const Icon = getNodeIcon(node.type)}
+    {@const status = nodeStatuses[node.id] ?? "idle"}
     <div
-      class="absolute select-none border-2 rounded-xl shadow-lg transition-shadow
-        {getNodeStyle(node.type)}
+      class="absolute select-none border-2 rounded-xl shadow-lg transition-all
+        {status === 'running' ? 'border-warning bg-warning/5 animate-pulse shadow-warning/20' :
+         status === 'done' ? 'border-success bg-success/5 shadow-success/20' :
+         status === 'error' ? 'border-danger bg-danger/5 shadow-danger/20' :
+         getNodeStyle(node.type)}
         {selectedNode === node.id ? 'ring-2 ring-accent shadow-accent/20' : ''}"
       style="left: {node.x}px; top: {node.y}px; width: {NODE_W}px; height: {NODE_H}px; z-index: {selectedNode === node.id ? 10 : 2}"
       role="button"
