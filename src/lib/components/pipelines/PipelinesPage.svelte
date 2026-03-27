@@ -130,13 +130,19 @@
     const sorted = topologicalSort(activePipeline.nodes, activePipeline.connections);
     let lastOutput = "";
 
+    // Add "started" log entry
+    results = [...results, { nodeId: "", label: "Pipeline", output: `Started at ${new Date().toLocaleTimeString()}`, status: "done", duration: 0 }];
+
     for (const node of sorted) {
       if (node.type === "input" || node.type === "output") {
         nodeStatuses = { ...nodeStatuses, [node.id]: "done" };
         continue;
       }
 
+      // Log "running" state
+      results = [...results, { nodeId: node.id, label: node.label, output: `Running...`, status: "running", duration: 0 }];
       nodeStatuses = { ...nodeStatuses, [node.id]: "running" };
+
       const start = Date.now();
 
       try {
@@ -148,19 +154,22 @@
         const duration = Date.now() - start;
         lastOutput = output;
         nodeStatuses = { ...nodeStatuses, [node.id]: "done" };
-        results = [...results, { nodeId: node.id, label: node.label, output, status: "done", duration }];
+        // Replace "Running..." entry with actual result
+        results = results.filter((r) => !(r.nodeId === node.id && r.status === "running"));
+        results = [...results, { nodeId: node.id, label: node.label, output: output || "(empty output)", status: "done", duration }];
       } catch (e) {
         const duration = Date.now() - start;
         nodeStatuses = { ...nodeStatuses, [node.id]: "error" };
-        results = [...results, { nodeId: node.id, label: node.label, output: `${e}`, status: "error", duration }];
-        break; // Stop on error
+        results = results.filter((r) => !(r.nodeId === node.id && r.status === "running"));
+        results = [...results, { nodeId: node.id, label: node.label, output: `Error: ${e}`, status: "error", duration }];
+        break;
       }
     }
 
-    // Mark output node as done
     const outputNode = activePipeline.nodes.find((n) => n.type === "output");
     if (outputNode) nodeStatuses = { ...nodeStatuses, [outputNode.id]: "done" };
 
+    results = [...results, { nodeId: "", label: "Pipeline", output: `Completed at ${new Date().toLocaleTimeString()}`, status: "done", duration: 0 }];
     running = false;
   }
 

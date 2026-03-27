@@ -87,24 +87,35 @@ pub fn run_pipeline_node(node_type: String, config: serde_json::Value, context: 
                 .args(["-c", command])
                 .output()
                 .map_err(|e| format!("failed to run: {e}"))?;
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             if output.status.success() {
-                Ok(String::from_utf8_lossy(&output.stdout).to_string())
+                Ok(if stdout.is_empty() { stderr } else { stdout })
             } else {
-                Err(String::from_utf8_lossy(&output.stderr).to_string())
+                Err(format!("Exit code {}: {}", output.status.code().unwrap_or(-1), if stderr.is_empty() { stdout } else { stderr }))
             }
         }
         "claude" => {
             let prompt = config.get("prompt").and_then(|p| p.as_str()).unwrap_or("hello");
-            let mut args = vec!["-p".to_string(), prompt.to_string()];
-            if let Some(ctx) = context {
-                args.push("--context".to_string());
-                args.push(ctx);
-            }
+            // Build full prompt including context from previous node
+            let full_prompt = if let Some(ctx) = context {
+                format!("Context from previous step:\n{}\n\n{}", ctx.chars().take(2000).collect::<String>(), prompt)
+            } else {
+                prompt.to_string()
+            };
+            // Use --print for non-interactive output
             let output = std::process::Command::new("claude")
-                .args(&args)
+                .args(["--print", &full_prompt])
+                .env("CLAUDE_NO_TELEMETRY", "1")
                 .output()
                 .map_err(|e| format!("failed to run claude: {e}"))?;
-            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            if stdout.is_empty() && !stderr.is_empty() {
+                Err(stderr)
+            } else {
+                Ok(stdout)
+            }
         }
         "github" => {
             let command = config.get("command").and_then(|c| c.as_str()).unwrap_or("gh --help");
@@ -112,7 +123,9 @@ pub fn run_pipeline_node(node_type: String, config: serde_json::Value, context: 
                 .args(["-c", command])
                 .output()
                 .map_err(|e| format!("failed to run: {e}"))?;
-            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            Ok(if stdout.is_empty() { stderr } else { stdout })
         }
         _ => Ok(String::new()),
     }
