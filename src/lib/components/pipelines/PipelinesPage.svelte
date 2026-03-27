@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import PipelineCanvas from "./PipelineCanvas.svelte";
-  import { Plus, Save, Trash2, Play, ChevronDown } from "lucide-svelte";
+  import { Plus, Save, Trash2, Play, Square, ChevronDown } from "lucide-svelte";
   import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
 
   interface PipelineNode {
@@ -95,30 +96,7 @@
     }
   }
 
-  function topologicalSort(nodes: PipelineNode[], connections: PipelineConnection[]): PipelineNode[] {
-    const adj = new Map<string, string[]>();
-    const inDegree = new Map<string, number>();
-    for (const n of nodes) {
-      adj.set(n.id, []);
-      inDegree.set(n.id, 0);
-    }
-    for (const c of connections) {
-      adj.get(c.from_node)?.push(c.to_node);
-      inDegree.set(c.to_node, (inDegree.get(c.to_node) ?? 0) + 1);
-    }
-    const queue = nodes.filter((n) => (inDegree.get(n.id) ?? 0) === 0).map((n) => n.id);
-    const sorted: string[] = [];
-    while (queue.length > 0) {
-      const id = queue.shift()!;
-      sorted.push(id);
-      for (const next of adj.get(id) ?? []) {
-        const deg = (inDegree.get(next) ?? 1) - 1;
-        inDegree.set(next, deg);
-        if (deg === 0) queue.push(next);
-      }
-    }
-    return sorted.map((id) => nodes.find((n) => n.id === id)!).filter(Boolean);
-  }
+  let eventUnlisten: UnlistenFn | null = null;
 
   async function runPipeline() {
     if (!activePipeline) return;
@@ -127,50 +105,40 @@
     showResults = true;
     nodeStatuses = {};
 
-    const sorted = topologicalSort(activePipeline.nodes, activePipeline.connections);
-    let lastOutput = "";
-
-    // Add "started" log entry
-    results = [...results, { nodeId: "", label: "Pipeline", output: `Started at ${new Date().toLocaleTimeString()}`, status: "done", duration: 0 }];
-
-    for (const node of sorted) {
-      if (node.type === "input" || node.type === "output") {
-        nodeStatuses = { ...nodeStatuses, [node.id]: "done" };
-        continue;
+    // Listen for pipeline events from Rust background thread
+    if (eventUnlisten) eventUnlisten();
+    eventUnlisten = await listen<Record<string, string>>("pipeline-event", (event) => {
+      const d = event.payload;
+      if (d.type === "started") {
+        results = [...results, { nodeId: "", label: "Pipeline", output: d.message ?? "Started", status: "done" as NodeStatus, duration: 0 }];
+      } else if (d.type === "node_start") {
+        nodeStatuses = { ...nodeStatuses, [d.node_id]: "running" };
+        results = [...results, { nodeId: d.node_id, label: d.label ?? "", output: "Running...", status: "running" as NodeStatus, duration: 0 }];
+      } else if (d.type === "node_done") {
+        nodeStatuses = { ...nodeStatuses, [d.node_id]: "done" };
+        results = results.filter((r) => !(r.nodeId === d.node_id && r.status === "running"));
+        results = [...results, { nodeId: d.node_id, label: d.label ?? "", output: d.output || "(empty)", status: "done" as NodeStatus, duration: parseInt(d.duration ?? "0") }];
+      } else if (d.type === "node_error") {
+        nodeStatuses = { ...nodeStatuses, [d.node_id]: "error" };
+        results = results.filter((r) => !(r.nodeId === d.node_id && r.status === "running"));
+        results = [...results, { nodeId: d.node_id, label: d.label ?? "", output: d.output ?? "Error", status: "error" as NodeStatus, duration: parseInt(d.duration ?? "0") }];
+      } else if (d.type === "completed" || d.type === "cancelled") {
+        results = [...results, { nodeId: "", label: "Pipeline", output: d.message ?? d.type, status: "done" as NodeStatus, duration: 0 }];
+        running = false;
       }
+    });
 
-      // Log "running" state
-      results = [...results, { nodeId: node.id, label: node.label, output: `Running...`, status: "running", duration: 0 }];
-      nodeStatuses = { ...nodeStatuses, [node.id]: "running" };
-
-      const start = Date.now();
-
-      try {
-        const output = await invoke<string>("run_pipeline_node", {
-          nodeType: node.type,
-          config: node.config,
-          context: lastOutput || null,
-        });
-        const duration = Date.now() - start;
-        lastOutput = output;
-        nodeStatuses = { ...nodeStatuses, [node.id]: "done" };
-        // Replace "Running..." entry with actual result
-        results = results.filter((r) => !(r.nodeId === node.id && r.status === "running"));
-        results = [...results, { nodeId: node.id, label: node.label, output: output || "(empty output)", status: "done", duration }];
-      } catch (e) {
-        const duration = Date.now() - start;
-        nodeStatuses = { ...nodeStatuses, [node.id]: "error" };
-        results = results.filter((r) => !(r.nodeId === node.id && r.status === "running"));
-        results = [...results, { nodeId: node.id, label: node.label, output: `Error: ${e}`, status: "error", duration }];
-        break;
-      }
+    // Fire and forget — Rust runs in a background thread
+    try {
+      await invoke("start_pipeline_run", { pipeline: activePipeline });
+    } catch (e) {
+      results = [...results, { nodeId: "", label: "Error", output: `${e}`, status: "error" as NodeStatus, duration: 0 }];
+      running = false;
     }
+  }
 
-    const outputNode = activePipeline.nodes.find((n) => n.type === "output");
-    if (outputNode) nodeStatuses = { ...nodeStatuses, [outputNode.id]: "done" };
-
-    results = [...results, { nodeId: "", label: "Pipeline", output: `Completed at ${new Date().toLocaleTimeString()}`, status: "done", duration: 0 }];
-    running = false;
+  async function cancelPipeline() {
+    await invoke("cancel_pipeline_run");
   }
 
   async function loadPipelines() {
@@ -182,6 +150,7 @@
   }
 
   onMount(loadPipelines);
+  onDestroy(() => { if (eventUnlisten) eventUnlisten(); });
 </script>
 
 <ConfirmDialog
@@ -246,14 +215,23 @@
         {#if saveMessage}
           <span class="text-xs {saveMessage.startsWith('Error') ? 'text-danger' : 'text-success'}">{saveMessage}</span>
         {/if}
-        <button
-          class="flex items-center gap-1 px-3 py-1.5 text-xs bg-success/20 text-success rounded-md hover:bg-success/30 disabled:opacity-50"
-          onclick={runPipeline}
-          disabled={running}
-        >
-          <Play size={12} />
-          {running ? "Running..." : "Run"}
-        </button>
+        {#if running}
+          <button
+            class="flex items-center gap-1 px-3 py-1.5 text-xs bg-danger/20 text-danger rounded-md hover:bg-danger/30"
+            onclick={cancelPipeline}
+          >
+            <Square size={12} />
+            Cancel
+          </button>
+        {:else}
+          <button
+            class="flex items-center gap-1 px-3 py-1.5 text-xs bg-success/20 text-success rounded-md hover:bg-success/30"
+            onclick={runPipeline}
+          >
+            <Play size={12} />
+            Run
+          </button>
+        {/if}
         <button
           class="flex items-center gap-1 px-3 py-1.5 text-xs bg-bg-tertiary border border-border rounded-md text-text-secondary hover:border-accent/30"
           onclick={savePipeline}

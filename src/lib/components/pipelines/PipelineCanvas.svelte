@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Bot, Terminal, GitBranch, Play, CircleDot, X, Trash2 } from "lucide-svelte";
+  import { Bot, Terminal, GitBranch, Play, CircleDot, X, Trash2, Globe, Repeat, Clock } from "lucide-svelte";
 
   interface PipelineNode {
     id: string;
@@ -40,6 +40,9 @@
     { type: "claude", label: "Claude Prompt", icon: Bot, color: "border-accent bg-accent/5" },
     { type: "bash", label: "Bash Command", icon: Terminal, color: "border-success bg-success/5" },
     { type: "github", label: "GitHub Action", icon: GitBranch, color: "border-info bg-info/5" },
+    { type: "http", label: "HTTP Request", icon: Globe, color: "border-danger bg-danger/5" },
+    { type: "transform", label: "Transform", icon: Repeat, color: "border-warning bg-warning/5" },
+    { type: "delay", label: "Delay", icon: Clock, color: "border-text-muted bg-bg-tertiary" },
     { type: "input", label: "Input", icon: Play, color: "border-warning bg-warning/5" },
     { type: "output", label: "Output", icon: CircleDot, color: "border-text-muted bg-bg-tertiary" },
   ];
@@ -121,7 +124,12 @@
         label: NODE_TYPES.find((t) => t.type === type)?.label ?? type,
         x: addMenuPos.x,
         y: addMenuPos.y,
-        config: type === "claude" ? { prompt: "" } : type === "bash" ? { command: "" } : type === "github" ? { command: "" } : {},
+        config: type === "claude" ? { prompt: "" } :
+               type === "bash" ? { command: "" } :
+               type === "github" ? { command: "" } :
+               type === "http" ? { url: "", method: "GET", body: "" } :
+               type === "transform" ? { operation: "passthrough" } :
+               type === "delay" ? { seconds: "1" } : {},
       },
     ];
     showAddMenu = false;
@@ -246,6 +254,9 @@
             {node.type === "claude" ? (node.config.prompt || "Set prompt...") :
              node.type === "bash" ? (node.config.command || "Set command...") :
              node.type === "github" ? (node.config.command || "Set gh command...") :
+             node.type === "http" ? `${node.config.method || "GET"} ${node.config.url || "Set URL..."}` :
+             node.type === "transform" ? (node.config.operation || "passthrough") :
+             node.type === "delay" ? `${node.config.seconds || 1}s delay` :
              node.type}
           </p>
         </div>
@@ -334,6 +345,45 @@
             <span class="text-xs text-text-muted">GitHub CLI Command</span>
             <input type="text" class="w-full mt-0.5 px-2 py-1 text-sm bg-bg-tertiary border border-border rounded text-text-primary font-mono focus:outline-none focus:border-accent" placeholder="gh pr list" bind:value={node.config.command} />
             <p class="text-[9px] text-text-muted mt-0.5">Use <code class="text-accent">{"{{"}input{"}}"}</code> to reference previous output</p>
+          </label>
+        {:else if node.type === "http"}
+          <div class="grid grid-cols-3 gap-2">
+            <label class="block">
+              <span class="text-xs text-text-muted">Method</span>
+              <select class="w-full mt-0.5 px-2 py-1 text-sm bg-bg-tertiary border border-border rounded text-text-primary focus:outline-none focus:border-accent" bind:value={node.config.method}>
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="DELETE">DELETE</option>
+              </select>
+            </label>
+            <label class="block col-span-2">
+              <span class="text-xs text-text-muted">URL</span>
+              <input type="text" class="w-full mt-0.5 px-2 py-1 text-sm bg-bg-tertiary border border-border rounded text-text-primary font-mono focus:outline-none focus:border-accent" placeholder="https://api.example.com/data" bind:value={node.config.url} />
+            </label>
+          </div>
+          <label class="block">
+            <span class="text-xs text-text-muted">Body (for POST/PUT)</span>
+            <textarea class="w-full mt-0.5 px-2 py-1 text-sm bg-bg-tertiary border border-border rounded text-text-primary font-mono resize-y focus:outline-none focus:border-accent" rows="2" placeholder="JSON body..." bind:value={node.config.body}></textarea>
+          </label>
+        {:else if node.type === "transform"}
+          <label class="block">
+            <span class="text-xs text-text-muted">Operation</span>
+            <select class="w-full mt-0.5 px-2 py-1 text-sm bg-bg-tertiary border border-border rounded text-text-primary focus:outline-none focus:border-accent" bind:value={node.config.operation}>
+              <option value="passthrough">Pass through</option>
+              <option value="uppercase">Uppercase</option>
+              <option value="lowercase">Lowercase</option>
+              <option value="trim">Trim whitespace</option>
+              <option value="line_count">Count lines</option>
+              <option value="word_count">Count words</option>
+              <option value="first_line">First line only</option>
+              <option value="json_pretty">JSON pretty print</option>
+            </select>
+          </label>
+        {:else if node.type === "delay"}
+          <label class="block">
+            <span class="text-xs text-text-muted">Seconds</span>
+            <input type="number" class="w-full mt-0.5 px-2 py-1 text-sm bg-bg-tertiary border border-border rounded text-text-primary focus:outline-none focus:border-accent" placeholder="1" bind:value={node.config.seconds} />
           </label>
         {/if}
       </div>

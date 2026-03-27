@@ -67,7 +67,8 @@ pub fn run() {
             commands::pipelines::list_pipelines,
             commands::pipelines::save_pipeline,
             commands::pipelines::delete_pipeline,
-            commands::pipelines::run_pipeline_node,
+            commands::pipelines::start_pipeline_run,
+            commands::pipelines::cancel_pipeline_run,
             // Maintenance
             commands::maintenance::get_disk_usage,
             commands::maintenance::cleanup_directory,
