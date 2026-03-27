@@ -29,7 +29,7 @@
   } from "lucide-svelte";
   import { getTheme, toggleTheme } from "$lib/stores/theme.svelte";
   import type { CostSummary } from "$lib/tauri/commands";
-  import { ExternalLink, Github, X as XIcon } from "lucide-svelte";
+  import { ExternalLink, GitBranch as GithubIcon, X as XIcon } from "lucide-svelte";
 
   let showAbout = $state(false);
 
@@ -211,7 +211,7 @@
           rel="noopener"
           class="flex items-center justify-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
         >
-          <Github size={14} />
+          <GithubIcon size={14} />
           github.com/caioricciuti/glyphic
         </a>
       </div>
