@@ -21,6 +21,7 @@
       "icons/512x512.png",
       "icons/icon.png"
     ],
+    "createUpdaterArtifacts": "v1Compatible",
     "macOS": {
       "minimumSystemVersion": "10.15"
     },
