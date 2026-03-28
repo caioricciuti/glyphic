@@ -139,8 +139,13 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &Has
         }
         "claude" => {
             let full = resolve_claude_prompt(node, context, all_outputs);
+            let skip = node.config.get("dangerouslySkipPermissions")
+                .and_then(|v| v.as_str()) == Some("true");
+            let mut args: Vec<&str> = vec![];
+            if skip { args.push("--dangerously-skip-permissions"); }
+            args.extend(["--print", &full]);
             let output = std::process::Command::new(paths::claude_bin())
-                .args(["--print", &full])
+                .args(&args)
                 .env("PATH", paths::enriched_path())
                 .env("CLAUDE_NO_TELEMETRY", "1")
                 .output()
@@ -282,14 +287,20 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &Has
         }
         "readfile" => {
             let raw_path = node.config.get("path").and_then(|p| p.as_str()).unwrap_or("");
-            let path = substitute_vars(raw_path, ctx, all_outputs);
+            let path = expand_tilde(&substitute_vars(raw_path, ctx, all_outputs));
             fs::read_to_string(&path).map_err(|e| format!("Read file error: {e}"))
         }
         "writefile" => {
             let raw_path = node.config.get("path").and_then(|p| p.as_str()).unwrap_or("");
-            let path = substitute_vars(raw_path, ctx, all_outputs);
+            let path = expand_tilde(&substitute_vars(raw_path, ctx, all_outputs));
             let mode = node.config.get("mode").and_then(|m| m.as_str()).unwrap_or("overwrite");
             let content = ctx.unwrap_or("");
+            // Create parent directories if they don't exist
+            if let Some(parent) = std::path::Path::new(&path).parent() {
+                if !parent.as_os_str().is_empty() {
+                    fs::create_dir_all(parent).map_err(|e| format!("Create dir error: {e}"))?;
+                }
+            }
             if mode == "append" {
                 use std::io::Write;
                 let mut file = std::fs::OpenOptions::new().create(true).append(true).open(&path)
@@ -339,6 +350,15 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &Has
         }
         _ => Ok(ctx.unwrap_or("").to_string()),
     }
+}
+
+fn expand_tilde(path: &str) -> String {
+    if path.starts_with("~/") || path == "~" {
+        if let Some(home) = dirs::home_dir() {
+            return format!("{}/{}", home.display(), &path[2..]);
+        }
+    }
+    path.to_string()
 }
 
 fn shell_escape(s: &str) -> String {
@@ -451,6 +471,9 @@ pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> R
                 "type": "node_start",
                 "node_id": node.id,
                 "label": node.label,
+                "input": last_output.clone().unwrap_or_default(),
+                "config": serde_json::to_string(&node.config).unwrap_or_default(),
+                "node_type": node.node_type,
             }));
 
             let start = std::time::Instant::now();

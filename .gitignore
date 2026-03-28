@@ -5,3 +5,7 @@ src-tauri/target/
 *.log
 .env
 .env.*
+
+CLAUDE.md
+
+.claude/

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import PipelineCanvas from "./PipelineCanvas.svelte";
   import CodeEditor from "./CodeEditor.svelte";
   import {
@@ -11,8 +10,10 @@
     GitCommitHorizontal, Filter, FileInput, FileOutput, Bell, Braces,
   } from "lucide-svelte";
   import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
-  import { Terminal as XTerm } from "@xterm/xterm";
-  import { FitAddon } from "@xterm/addon-fit";
+  import {
+    getRunning, getResults, getNodeStatuses, getInteractiveNodeId, getInteractiveNodeLabel,
+    startPipelineRun, cancelPipelineRun, clearResults, attachTerminal, detachTerminal,
+  } from "$lib/stores/pipeline-execution.svelte";
 
   import type { Node, Edge } from "@xyflow/svelte";
 
@@ -28,16 +29,6 @@
     schedule_enabled?: boolean;
   }
 
-  type NodeStatus = "idle" | "running" | "done" | "error";
-
-  interface NodeResult {
-    nodeId: string;
-    label: string;
-    output: string;
-    status: NodeStatus;
-    duration: number;
-  }
-
   // --- State ---
   let pipelines = $state<RustPipeline[]>([]);
   let activePipelineId = $state<string | null>(null);
@@ -45,14 +36,19 @@
   let flowNodes = $state<Node[]>([]);
   let flowEdges = $state<Edge[]>([]);
   let saving = $state(false);
-  let running = $state(false);
   let saveMessage = $state<string | null>(null);
   let deleteDialogOpen = $state(false);
   let showPipelineList = $state(false);
-  let nodeStatuses = $state<Record<string, NodeStatus>>({});
-  let results = $state<NodeResult[]>([]);
   let selectedNode = $state<Node | null>(null);
   let rightTab = $state<"config" | "results" | "logs">("config");
+  let highlightedResultId = $state<string | null>(null);
+
+  // Execution state from persistent store (survives navigation)
+  const running = $derived(getRunning());
+  const results = $derived(getResults());
+  const nodeStatuses = $derived(getNodeStatuses());
+  const interactiveNodeId = $derived(getInteractiveNodeId());
+  const interactiveNodeLabel = $derived(getInteractiveNodeLabel());
 
   // Schedule state
   let showSchedulePopover = $state(false);
@@ -70,152 +66,11 @@
     { label: "Weekly (Mon 9am)", value: "0 9 * * 1" },
   ];
 
-  // Interactive pipeline terminal — reuses spawn_terminal / terminal-output from pty.rs
-  let pipelineTerminal: XTerm | null = $state(null);
-  let pipelineFitAddon: FitAddon | null = $state(null);
-  let pipelineTermContainerEl: HTMLDivElement | null = null;
-  let interactiveNodeId: string | null = $state(null);
-  let interactiveNodeLabel: string | null = $state(null);
-  let interactiveSessionId: string | null = $state(null);
-  let unlistenTermOutput: UnlistenFn | null = $state(null);
-  let unlistenTermExit: UnlistenFn | null = $state(null);
-  let accumulatedOutput: string[] = [];
-
-  const TERM_THEME = {
-    background: "#0d1117",
-    foreground: "#e6edf3",
-    cursor: "#c084fc",
-    selectionBackground: "#c084fc40",
-    black: "#0d1117",
-    red: "#f85149",
-    green: "#3fb950",
-    yellow: "#d29922",
-    blue: "#58a6ff",
-    magenta: "#c084fc",
-    cyan: "#39d353",
-    white: "#e6edf3",
-    brightBlack: "#8b949e",
-    brightRed: "#f85149",
-    brightGreen: "#3fb950",
-    brightYellow: "#d29922",
-    brightBlue: "#58a6ff",
-    brightMagenta: "#c084fc",
-    brightCyan: "#39d353",
-    brightWhite: "#ffffff",
-  };
-
-  async function startInteractiveTerminal(sessionId: string, prompt: string, workingDir: string, skipPerms: boolean) {
-    if (pipelineTerminal) disposePipelineTerminal();
-
-    interactiveSessionId = sessionId;
-    accumulatedOutput = [];
-
-    const term = new XTerm({
-      cursorBlink: true,
-      fontSize: 11,
-      fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
-      theme: TERM_THEME,
-      allowProposedApi: true,
-    });
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-
-    // Send user keystrokes via the SAME write_terminal used by Terminal page
-    term.onData((data) => {
-      const encoded = btoa(data);
-      invoke("write_terminal", { id: sessionId, data: encoded }).catch(() => {});
-    });
-
-    // Resize via the SAME resize_terminal used by Terminal page
-    term.onResize(({ cols, rows }) => {
-      invoke("resize_terminal", { id: sessionId, cols, rows }).catch(() => {});
-    });
-
-    // Persistent off-screen container (survives tab switches)
-    const containerEl = document.createElement("div");
-    containerEl.style.width = "100%";
-    containerEl.style.height = "100%";
-    containerEl.style.padding = "4px";
-    containerEl.style.boxSizing = "border-box";
-    containerEl.style.position = "absolute";
-    containerEl.style.left = "-9999px";
-    document.body.appendChild(containerEl);
-    term.open(containerEl);
-
-    pipelineTerminal = term;
-    pipelineFitAddon = fit;
-    pipelineTermContainerEl = containerEl;
-
-    // Listen for terminal-output (SAME events as Terminal page)
-    unlistenTermOutput = await listen<{ id: string; data: string }>(
-      "terminal-output",
-      (event) => {
-        if (event.payload.id === interactiveSessionId && pipelineTerminal) {
-          const bytes = Uint8Array.from(atob(event.payload.data), (c) => c.charCodeAt(0));
-          pipelineTerminal.write(bytes);
-          // Accumulate raw text for downstream nodes
-          accumulatedOutput.push(atob(event.payload.data));
-        }
-      }
-    );
-
-    // Listen for terminal-exit (SAME events as Terminal page)
-    unlistenTermExit = await listen<{ id: string }>(
-      "terminal-exit",
-      (event) => {
-        if (event.payload.id === interactiveSessionId) {
-          // Send accumulated output to resume the pipeline thread
-          const rawOutput = accumulatedOutput.join("");
-          invoke("resume_pipeline_node", { output: rawOutput }).catch(console.error);
-          disposePipelineTerminal();
-        }
-      }
-    );
-
-    // Spawn terminal via the SAME spawn_terminal used by Terminal page — with prompt
-    await invoke("spawn_terminal", {
-      id: sessionId,
-      path: workingDir,
-      cols: 80,
-      rows: 24,
-      prompt,
-      dangerouslySkipPermissions: skipPerms || null,
-    });
-  }
-
-  function disposePipelineTerminal() {
-    unlistenTermOutput?.();
-    unlistenTermExit?.();
-    unlistenTermOutput = null;
-    unlistenTermExit = null;
-    pipelineTerminal?.dispose();
-    pipelineTerminal = null;
-    pipelineFitAddon = null;
-    pipelineTermContainerEl?.remove();
-    pipelineTermContainerEl = null;
-    interactiveNodeId = null;
-    interactiveNodeLabel = null;
-    interactiveSessionId = null;
-    accumulatedOutput = [];
-  }
-
-  // Svelte action: move persistent terminal container in/out of visible parent
+  // Svelte action: attach/detach terminal from store
   function attachTerminalAction(node: HTMLDivElement) {
-    if (pipelineTermContainerEl) {
-      pipelineTermContainerEl.style.position = "relative";
-      pipelineTermContainerEl.style.left = "0";
-      node.appendChild(pipelineTermContainerEl);
-      requestAnimationFrame(() => pipelineFitAddon?.fit());
-    }
+    attachTerminal(node);
     return {
-      destroy() {
-        // Move back off-screen (don't dispose — terminal stays alive)
-        if (pipelineTermContainerEl) {
-          pipelineTermContainerEl.style.position = "absolute";
-          pipelineTermContainerEl.style.left = "-9999px";
-          document.body.appendChild(pipelineTermContainerEl);
-        }
-      }
+      destroy() { detachTerminal(); }
     };
   }
 
@@ -327,8 +182,16 @@
 
   function onSelectNode(node: Node | null) {
     selectedNode = node;
-    if (node && node.type !== "input" && node.type !== "output") {
-      rightTab = "config";
+    if (node) {
+      // If this node has a completed result, jump to its trace
+      const hasResult = results.some((r) => r.nodeId === node.id && (r.status === "done" || r.status === "error"));
+      if (hasResult && !running) {
+        rightTab = "results";
+        highlightedResultId = node.id;
+        setTimeout(() => { highlightedResultId = null; }, 2000);
+      } else if (node.type !== "input" && node.type !== "output") {
+        rightTab = "config";
+      }
     }
   }
 
@@ -371,8 +234,7 @@
     const { nodes, edges } = toFlowFormat(p);
     flowNodes = nodes;
     flowEdges = edges;
-    nodeStatuses = {};
-    results = [];
+    clearResults();
     selectedNode = null;
     scheduleExpr = p.schedule ?? "";
     scheduleEnabled = p.schedule_enabled ?? false;
@@ -387,8 +249,7 @@
       { id: crypto.randomUUID(), type: "output", position: { x: 600, y: 200 }, data: { label: "End", config: {}, status: "idle" } },
     ];
     flowEdges = [];
-    nodeStatuses = {};
-    results = [];
+    clearResults();
     selectedNode = null;
   }
 
@@ -424,61 +285,15 @@
     }
   }
 
-  // --- Run pipeline ---
-  let eventUnlisten: UnlistenFn | null = null;
-
+  // --- Run pipeline (delegates to persistent store) ---
   async function runPipeline() {
     if (!activePipelineId) return;
-    running = true;
-    results = [];
     rightTab = "results";
-    nodeStatuses = {};
-    disposePipelineTerminal();
-
-    if (eventUnlisten) eventUnlisten();
-    eventUnlisten = await listen<Record<string, string>>("pipeline-event", (event) => {
-      const d = event.payload;
-      if (d.type === "started") {
-        results = [...results, { nodeId: "", label: "Pipeline", output: d.message ?? "Started", status: "done" as NodeStatus, duration: 0 }];
-      } else if (d.type === "node_interactive_start") {
-        // Claude interactive node: spawn terminal using same infra as Terminal page
-        interactiveNodeId = d.node_id;
-        interactiveNodeLabel = d.label ?? "Claude";
-        nodeStatuses = { ...nodeStatuses, [d.node_id]: "running" };
-        results = results.filter((r) => !(r.nodeId === d.node_id && r.status === "running"));
-        results = [...results, { nodeId: d.node_id, label: d.label ?? "", output: "Interactive — waiting for user...", status: "running" as NodeStatus, duration: 0 }];
-        startInteractiveTerminal(d.session_id, d.prompt, d.working_dir, d.dangerously_skip_permissions === "true").catch(console.error);
-      } else if (d.type === "node_start") {
-        nodeStatuses = { ...nodeStatuses, [d.node_id]: "running" };
-        results = [...results, { nodeId: d.node_id, label: d.label ?? "", output: "Running...", status: "running" as NodeStatus, duration: 0 }];
-      } else if (d.type === "node_done") {
-        nodeStatuses = { ...nodeStatuses, [d.node_id]: "done" };
-        results = results.filter((r) => !(r.nodeId === d.node_id && r.status === "running"));
-        results = [...results, { nodeId: d.node_id, label: d.label ?? "", output: d.output || "(empty)", status: "done" as NodeStatus, duration: parseInt(d.duration ?? "0") }];
-        // If this was an interactive node, terminal is already disposed by pty-exit handler
-      } else if (d.type === "node_error") {
-        nodeStatuses = { ...nodeStatuses, [d.node_id]: "error" };
-        results = results.filter((r) => !(r.nodeId === d.node_id && r.status === "running"));
-        results = [...results, { nodeId: d.node_id, label: d.label ?? "", output: d.output ?? "Error", status: "error" as NodeStatus, duration: parseInt(d.duration ?? "0") }];
-        disposePipelineTerminal();
-      } else if (d.type === "completed" || d.type === "cancelled") {
-        results = [...results, { nodeId: "", label: "Pipeline", output: d.message ?? d.type, status: "done" as NodeStatus, duration: 0 }];
-        running = false;
-        disposePipelineTerminal();
-      }
-    });
-
-    try {
-      await invoke("start_pipeline_run", { pipeline: toRustFormat() });
-    } catch (e) {
-      results = [...results, { nodeId: "", label: "Error", output: `${e}`, status: "error" as NodeStatus, duration: 0 }];
-      running = false;
-      disposePipelineTerminal();
-    }
+    await startPipelineRun(toRustFormat());
   }
 
   async function cancelPipeline() {
-    await invoke("cancel_pipeline_run");
+    await cancelPipelineRun();
   }
 
   async function enableSchedule() {
@@ -524,10 +339,14 @@
     }
   }
 
-  onMount(loadPipelines);
+  onMount(() => {
+    loadPipelines();
+    // If pipeline was running while we were on another page, show results
+    if (running) rightTab = "results";
+  });
   onDestroy(() => {
-    if (eventUnlisten) eventUnlisten();
-    disposePipelineTerminal();
+    // Only detach terminal — don't kill it. Store keeps everything alive.
+    detachTerminal();
   });
 
   // Derived: whether right panel should show
@@ -1232,17 +1051,53 @@
                   </div>
                 {:else}
                   <div class="flex items-center justify-between px-3 py-2 border-b border-border">
-                    <span class="text-[10px] text-text-muted">{results.length} events</span>
-                    <button class="text-text-muted hover:text-text-primary text-[10px]" onclick={() => { results = []; nodeStatuses = {}; }}>Clear</button>
+                    <span class="text-[10px] text-text-muted">{results.filter(r => r.nodeId).length} steps</span>
+                    <button class="text-text-muted hover:text-text-primary text-[10px]" onclick={() => clearResults()}>Clear</button>
                   </div>
                   {#each results as result}
-                    <div class="px-3 py-2 border-b border-border/50">
-                      <div class="flex items-center justify-between mb-1">
-                        <span class="text-xs font-medium {result.status === 'done' ? 'text-success' : result.status === 'error' ? 'text-danger' : 'text-warning'}">{result.label}</span>
-                        <span class="text-[10px] text-text-muted">{result.duration}ms</span>
-                      </div>
-                      <pre class="text-[10px] text-text-secondary font-mono whitespace-pre-wrap max-h-32 overflow-y-auto bg-bg-tertiary rounded p-2">{result.output.slice(0, 500)}{result.output.length > 500 ? "..." : ""}</pre>
-                    </div>
+                    {#if !result.nodeId}
+                      <!-- Pipeline-level event (started/completed) -->
+                      <div class="px-3 py-1.5 text-[10px] text-text-muted border-b border-border/30">{result.output}</div>
+                    {:else}
+                      <!-- Node trace entry -->
+                      <details
+                        class="border-b border-border/50 group {highlightedResultId === result.nodeId ? 'bg-accent/10' : ''}"
+                        id="trace-{result.nodeId}"
+                        open={highlightedResultId === result.nodeId}
+                      >
+                        <summary class="px-3 py-2 cursor-pointer hover:bg-bg-hover list-none flex items-center gap-2">
+                          <span class="w-2 h-2 rounded-full shrink-0 {
+                            result.status === 'done' ? 'bg-success' :
+                            result.status === 'error' ? 'bg-danger' :
+                            result.status === 'running' ? 'bg-warning animate-pulse' : 'bg-text-muted'
+                          }"></span>
+                          <span class="text-xs font-medium text-text-primary flex-1 truncate">{result.label}</span>
+                          {#if result.duration > 0}
+                            <span class="text-[10px] text-text-muted shrink-0">{result.duration.toLocaleString()}ms</span>
+                          {/if}
+                        </summary>
+                        <div class="px-3 pb-3 space-y-2">
+                          {#if result.input}
+                            <div>
+                              <span class="text-[10px] text-text-muted font-medium uppercase tracking-wider">Input</span>
+                              <pre class="text-[10px] text-text-secondary font-mono whitespace-pre-wrap max-h-32 overflow-y-auto bg-bg-tertiary rounded p-2 mt-1">{result.input}</pre>
+                            </div>
+                          {/if}
+                          <div>
+                            <span class="text-[10px] text-text-muted font-medium uppercase tracking-wider">Output</span>
+                            <pre class="text-[10px] font-mono whitespace-pre-wrap max-h-48 overflow-y-auto bg-bg-tertiary rounded p-2 mt-1 {
+                              result.status === 'error' ? 'text-danger' : 'text-text-secondary'
+                            }">{result.output}</pre>
+                          </div>
+                          {#if result.config}
+                            <div>
+                              <span class="text-[10px] text-text-muted font-medium uppercase tracking-wider">Config</span>
+                              <pre class="text-[10px] text-text-muted font-mono whitespace-pre-wrap max-h-24 overflow-y-auto bg-bg-tertiary rounded p-2 mt-1">{result.config}</pre>
+                            </div>
+                          {/if}
+                        </div>
+                      </details>
+                    {/if}
                   {/each}
                 {/if}
               </div>
