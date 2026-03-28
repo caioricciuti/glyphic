@@ -1,7 +1,9 @@
 use crate::paths;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use tauri::Emitter;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -94,22 +96,30 @@ pub fn cancel_pipeline_run() -> Result<(), String> {
     Ok(())
 }
 
-fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &std::collections::HashMap<String, String>) -> Result<String, String> {
-    let ctx = context.as_deref();
-
-    // Replace all {{node_label}} references with their outputs
-    fn substitute_vars(text: &str, ctx: Option<&str>, all_outputs: &std::collections::HashMap<String, String>) -> String {
-        let mut result = text.to_string();
-        // Replace {{input}} with immediate previous output
-        if let Some(c) = ctx {
-            result = result.replace("{{input}}", c).replace("$INPUT", c);
-        }
-        // Replace {{NodeName}} with that node's output
-        for (label, output) in all_outputs {
-            result = result.replace(&format!("{{{{{}}}}}", label), output);
-        }
-        result
+fn substitute_vars(text: &str, ctx: Option<&str>, all_outputs: &HashMap<String, String>) -> String {
+    let mut result = text.to_string();
+    if let Some(c) = ctx {
+        result = result.replace("{{input}}", c).replace("$INPUT", c);
     }
+    for (label, output) in all_outputs {
+        result = result.replace(&format!("{{{{{}}}}}", label), output);
+    }
+    result
+}
+
+fn resolve_claude_prompt(node: &PipelineNode, context: &Option<String>, all_outputs: &HashMap<String, String>) -> String {
+    let ctx = context.as_deref();
+    let raw_prompt = node.config.get("prompt").and_then(|p| p.as_str()).unwrap_or("hello");
+    let prompt = substitute_vars(raw_prompt, ctx, all_outputs);
+    if let Some(c) = ctx {
+        format!("Context:\n{}\n\n{}", &c[..c.len().min(2000)], prompt)
+    } else {
+        prompt
+    }
+}
+
+fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &HashMap<String, String>) -> Result<String, String> {
+    let ctx = context.as_deref();
 
     match node.node_type.as_str() {
         "bash" | "github" => {
@@ -128,11 +138,7 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &std
             }
         }
         "claude" => {
-            let raw_prompt = node.config.get("prompt").and_then(|p| p.as_str()).unwrap_or("hello");
-            let prompt = substitute_vars(raw_prompt, ctx, all_outputs);
-            let full = if let Some(c) = ctx {
-                format!("Context:\n{}\n\n{}", &c[..c.len().min(2000)], prompt)
-            } else { prompt };
+            let full = resolve_claude_prompt(node, context, all_outputs);
             let output = std::process::Command::new(paths::claude_bin())
                 .args(["--print", &full])
                 .env("PATH", paths::enriched_path())
@@ -388,6 +394,19 @@ pub fn topo_sort(nodes: &[PipelineNode], connections: &[PipelineConnection]) -> 
     sorted
 }
 
+// Channel for pipeline thread to wait while frontend handles interactive Claude nodes
+static INTERACTIVE_SENDER: Mutex<Option<std::sync::mpsc::Sender<String>>> = Mutex::new(None);
+
+#[tauri::command]
+pub fn resume_pipeline_node(output: String) -> Result<(), String> {
+    let sender = INTERACTIVE_SENDER.lock()
+        .map_err(|e| format!("lock: {e}"))?
+        .take()
+        .ok_or("No interactive node waiting")?;
+    sender.send(output).map_err(|e| format!("send: {e}"))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> Result<(), String> {
     CANCEL_FLAG.store(false, Ordering::SeqCst);
@@ -401,7 +420,7 @@ pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> R
         }));
 
         let mut last_output: Option<String> = None;
-        let mut all_outputs: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut all_outputs: HashMap<String, String> = HashMap::new();
 
         for node_id in &sorted {
             if CANCEL_FLAG.load(Ordering::SeqCst) {
@@ -435,7 +454,70 @@ pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> R
             }));
 
             let start = std::time::Instant::now();
-            match execute_node(node, &last_output, &all_outputs) {
+
+            // For Claude nodes, check interactive mode
+            let is_interactive = node.node_type == "claude"
+                && node.config.get("interactive").and_then(|v| v.as_str()) != Some("false");
+
+            let result = if is_interactive {
+                // Resolve prompt and working dir
+                let prompt = resolve_claude_prompt(node, &last_output, &all_outputs);
+                let working_dir = node.config.get("path")
+                    .and_then(|p| p.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().to_string_lossy().to_string());
+                let session_id = format!("pipeline-{}", node.id);
+
+                // Create channel — frontend will send output when Claude exits
+                let (tx, rx) = std::sync::mpsc::channel::<String>();
+                if let Ok(mut sender) = INTERACTIVE_SENDER.lock() {
+                    *sender = Some(tx);
+                }
+
+                let skip_perms = node.config.get("dangerouslySkipPermissions")
+                    .and_then(|v| v.as_str()) == Some("true");
+
+                // Tell frontend to spawn terminal with this prompt
+                let _ = app_handle.emit("pipeline-event", serde_json::json!({
+                    "type": "node_interactive_start",
+                    "node_id": node.id,
+                    "label": node.label,
+                    "session_id": session_id,
+                    "prompt": prompt,
+                    "working_dir": working_dir,
+                    "dangerously_skip_permissions": skip_perms,
+                }));
+
+                // Block until frontend calls resume_pipeline_node or cancel
+                let interactive_result: Result<String, String> = loop {
+                    match rx.recv_timeout(std::time::Duration::from_millis(200)) {
+                        Ok(output) => {
+                            // Strip ANSI escape codes
+                            let stripped = strip_ansi_escapes::strip(output.as_bytes());
+                            let clean = String::from_utf8_lossy(&stripped).trim().to_string();
+                            break Ok(if clean.is_empty() { "(no output)".to_string() } else { clean });
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                            if CANCEL_FLAG.load(Ordering::SeqCst) {
+                                break Err("Cancelled".to_string());
+                            }
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                            break Err("Interactive session disconnected".to_string());
+                        }
+                    }
+                };
+                // Clean up sender
+                if let Ok(mut sender) = INTERACTIVE_SENDER.lock() {
+                    *sender = None;
+                }
+                interactive_result
+            } else {
+                execute_node(node, &last_output, &all_outputs)
+            };
+
+            match result {
                 Ok(output) => {
                     let duration = start.elapsed().as_millis() as u64;
                     all_outputs.insert(node.label.clone(), output.clone());
@@ -473,7 +555,7 @@ pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> R
 
 #[tauri::command]
 pub fn run_single_node(node: PipelineNode, context: Option<String>) -> Result<String, String> {
-    let all_outputs = std::collections::HashMap::new();
+    let all_outputs = HashMap::new();
     execute_node(&node, &context, &all_outputs)
 }
 

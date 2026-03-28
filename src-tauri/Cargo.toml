@@ -1,6 +1,6 @@
 [package]
 name = "glyphic"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 
 [lib]
@@ -24,3 +24,4 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-notification = "2"
 base64 = "0.22"
+strip-ansi-escapes = "0.2"

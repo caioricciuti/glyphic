@@ -11,6 +11,8 @@
     GitCommitHorizontal, Filter, FileInput, FileOutput, Bell, Braces,
   } from "lucide-svelte";
   import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
+  import { Terminal as XTerm } from "@xterm/xterm";
+  import { FitAddon } from "@xterm/addon-fit";
 
   import type { Node, Edge } from "@xyflow/svelte";
 
@@ -67,6 +69,155 @@
     { label: "Daily at 9am", value: "0 9 * * *" },
     { label: "Weekly (Mon 9am)", value: "0 9 * * 1" },
   ];
+
+  // Interactive pipeline terminal — reuses spawn_terminal / terminal-output from pty.rs
+  let pipelineTerminal: XTerm | null = $state(null);
+  let pipelineFitAddon: FitAddon | null = $state(null);
+  let pipelineTermContainerEl: HTMLDivElement | null = null;
+  let interactiveNodeId: string | null = $state(null);
+  let interactiveNodeLabel: string | null = $state(null);
+  let interactiveSessionId: string | null = $state(null);
+  let unlistenTermOutput: UnlistenFn | null = $state(null);
+  let unlistenTermExit: UnlistenFn | null = $state(null);
+  let accumulatedOutput: string[] = [];
+
+  const TERM_THEME = {
+    background: "#0d1117",
+    foreground: "#e6edf3",
+    cursor: "#c084fc",
+    selectionBackground: "#c084fc40",
+    black: "#0d1117",
+    red: "#f85149",
+    green: "#3fb950",
+    yellow: "#d29922",
+    blue: "#58a6ff",
+    magenta: "#c084fc",
+    cyan: "#39d353",
+    white: "#e6edf3",
+    brightBlack: "#8b949e",
+    brightRed: "#f85149",
+    brightGreen: "#3fb950",
+    brightYellow: "#d29922",
+    brightBlue: "#58a6ff",
+    brightMagenta: "#c084fc",
+    brightCyan: "#39d353",
+    brightWhite: "#ffffff",
+  };
+
+  async function startInteractiveTerminal(sessionId: string, prompt: string, workingDir: string, skipPerms: boolean) {
+    if (pipelineTerminal) disposePipelineTerminal();
+
+    interactiveSessionId = sessionId;
+    accumulatedOutput = [];
+
+    const term = new XTerm({
+      cursorBlink: true,
+      fontSize: 11,
+      fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
+      theme: TERM_THEME,
+      allowProposedApi: true,
+    });
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+
+    // Send user keystrokes via the SAME write_terminal used by Terminal page
+    term.onData((data) => {
+      const encoded = btoa(data);
+      invoke("write_terminal", { id: sessionId, data: encoded }).catch(() => {});
+    });
+
+    // Resize via the SAME resize_terminal used by Terminal page
+    term.onResize(({ cols, rows }) => {
+      invoke("resize_terminal", { id: sessionId, cols, rows }).catch(() => {});
+    });
+
+    // Persistent off-screen container (survives tab switches)
+    const containerEl = document.createElement("div");
+    containerEl.style.width = "100%";
+    containerEl.style.height = "100%";
+    containerEl.style.padding = "4px";
+    containerEl.style.boxSizing = "border-box";
+    containerEl.style.position = "absolute";
+    containerEl.style.left = "-9999px";
+    document.body.appendChild(containerEl);
+    term.open(containerEl);
+
+    pipelineTerminal = term;
+    pipelineFitAddon = fit;
+    pipelineTermContainerEl = containerEl;
+
+    // Listen for terminal-output (SAME events as Terminal page)
+    unlistenTermOutput = await listen<{ id: string; data: string }>(
+      "terminal-output",
+      (event) => {
+        if (event.payload.id === interactiveSessionId && pipelineTerminal) {
+          const bytes = Uint8Array.from(atob(event.payload.data), (c) => c.charCodeAt(0));
+          pipelineTerminal.write(bytes);
+          // Accumulate raw text for downstream nodes
+          accumulatedOutput.push(atob(event.payload.data));
+        }
+      }
+    );
+
+    // Listen for terminal-exit (SAME events as Terminal page)
+    unlistenTermExit = await listen<{ id: string }>(
+      "terminal-exit",
+      (event) => {
+        if (event.payload.id === interactiveSessionId) {
+          // Send accumulated output to resume the pipeline thread
+          const rawOutput = accumulatedOutput.join("");
+          invoke("resume_pipeline_node", { output: rawOutput }).catch(console.error);
+          disposePipelineTerminal();
+        }
+      }
+    );
+
+    // Spawn terminal via the SAME spawn_terminal used by Terminal page — with prompt
+    await invoke("spawn_terminal", {
+      id: sessionId,
+      path: workingDir,
+      cols: 80,
+      rows: 24,
+      prompt,
+      dangerouslySkipPermissions: skipPerms || null,
+    });
+  }
+
+  function disposePipelineTerminal() {
+    unlistenTermOutput?.();
+    unlistenTermExit?.();
+    unlistenTermOutput = null;
+    unlistenTermExit = null;
+    pipelineTerminal?.dispose();
+    pipelineTerminal = null;
+    pipelineFitAddon = null;
+    pipelineTermContainerEl?.remove();
+    pipelineTermContainerEl = null;
+    interactiveNodeId = null;
+    interactiveNodeLabel = null;
+    interactiveSessionId = null;
+    accumulatedOutput = [];
+  }
+
+  // Svelte action: move persistent terminal container in/out of visible parent
+  function attachTerminalAction(node: HTMLDivElement) {
+    if (pipelineTermContainerEl) {
+      pipelineTermContainerEl.style.position = "relative";
+      pipelineTermContainerEl.style.left = "0";
+      node.appendChild(pipelineTermContainerEl);
+      requestAnimationFrame(() => pipelineFitAddon?.fit());
+    }
+    return {
+      destroy() {
+        // Move back off-screen (don't dispose — terminal stays alive)
+        if (pipelineTermContainerEl) {
+          pipelineTermContainerEl.style.position = "absolute";
+          pipelineTermContainerEl.style.left = "-9999px";
+          document.body.appendChild(pipelineTermContainerEl);
+        }
+      }
+    };
+  }
 
   // Single node test
   let testingNode = $state(false);
@@ -282,12 +433,21 @@
     results = [];
     rightTab = "results";
     nodeStatuses = {};
+    disposePipelineTerminal();
 
     if (eventUnlisten) eventUnlisten();
     eventUnlisten = await listen<Record<string, string>>("pipeline-event", (event) => {
       const d = event.payload;
       if (d.type === "started") {
         results = [...results, { nodeId: "", label: "Pipeline", output: d.message ?? "Started", status: "done" as NodeStatus, duration: 0 }];
+      } else if (d.type === "node_interactive_start") {
+        // Claude interactive node: spawn terminal using same infra as Terminal page
+        interactiveNodeId = d.node_id;
+        interactiveNodeLabel = d.label ?? "Claude";
+        nodeStatuses = { ...nodeStatuses, [d.node_id]: "running" };
+        results = results.filter((r) => !(r.nodeId === d.node_id && r.status === "running"));
+        results = [...results, { nodeId: d.node_id, label: d.label ?? "", output: "Interactive — waiting for user...", status: "running" as NodeStatus, duration: 0 }];
+        startInteractiveTerminal(d.session_id, d.prompt, d.working_dir, d.dangerously_skip_permissions === "true").catch(console.error);
       } else if (d.type === "node_start") {
         nodeStatuses = { ...nodeStatuses, [d.node_id]: "running" };
         results = [...results, { nodeId: d.node_id, label: d.label ?? "", output: "Running...", status: "running" as NodeStatus, duration: 0 }];
@@ -295,13 +455,16 @@
         nodeStatuses = { ...nodeStatuses, [d.node_id]: "done" };
         results = results.filter((r) => !(r.nodeId === d.node_id && r.status === "running"));
         results = [...results, { nodeId: d.node_id, label: d.label ?? "", output: d.output || "(empty)", status: "done" as NodeStatus, duration: parseInt(d.duration ?? "0") }];
+        // If this was an interactive node, terminal is already disposed by pty-exit handler
       } else if (d.type === "node_error") {
         nodeStatuses = { ...nodeStatuses, [d.node_id]: "error" };
         results = results.filter((r) => !(r.nodeId === d.node_id && r.status === "running"));
         results = [...results, { nodeId: d.node_id, label: d.label ?? "", output: d.output ?? "Error", status: "error" as NodeStatus, duration: parseInt(d.duration ?? "0") }];
+        disposePipelineTerminal();
       } else if (d.type === "completed" || d.type === "cancelled") {
         results = [...results, { nodeId: "", label: "Pipeline", output: d.message ?? d.type, status: "done" as NodeStatus, duration: 0 }];
         running = false;
+        disposePipelineTerminal();
       }
     });
 
@@ -310,6 +473,7 @@
     } catch (e) {
       results = [...results, { nodeId: "", label: "Error", output: `${e}`, status: "error" as NodeStatus, duration: 0 }];
       running = false;
+      disposePipelineTerminal();
     }
   }
 
@@ -361,12 +525,16 @@
   }
 
   onMount(loadPipelines);
-  onDestroy(() => { if (eventUnlisten) eventUnlisten(); });
+  onDestroy(() => {
+    if (eventUnlisten) eventUnlisten();
+    disposePipelineTerminal();
+  });
 
   // Derived: whether right panel should show
   const showRightPanel = $derived(
     (selectedNode && selectedNode.type !== "input" && selectedNode.type !== "output") ||
     results.length > 0 ||
+    interactiveNodeId !== null ||
     rightTab === "logs"
   );
 
@@ -656,17 +824,52 @@
 
                 <!-- Claude Prompt -->
                 {#if nodeType === "claude"}
-                  <div class="space-y-2">
-                    <label class="text-xs text-text-muted font-medium">Prompt</label>
-                    <CodeEditor
-                      value={nodeConfig.prompt ?? ""}
-                      language="text"
-                      placeholder="What should Claude do?"
-                      minHeight="120px"
-                      maxHeight="400px"
-                      onchange={(v) => updateNodeConfig(selectedNode!.id, "prompt", v)}
-                    />
-                    <p class="text-[10px] text-text-muted">Previous output is automatically passed as context. Use {"{{"}NodeName{"}}"} for specific nodes.</p>
+                  <div class="space-y-3">
+                    <div>
+                      <label class="text-xs text-text-muted font-medium">Prompt</label>
+                      <CodeEditor
+                        value={nodeConfig.prompt ?? ""}
+                        language="text"
+                        placeholder="What should Claude do?"
+                        minHeight="120px"
+                        maxHeight="400px"
+                        onchange={(v) => updateNodeConfig(selectedNode!.id, "prompt", v)}
+                      />
+                      <p class="text-[10px] text-text-muted mt-1">Previous output is automatically passed as context. Use {"{{"}NodeName{"}}"} for specific nodes.</p>
+                    </div>
+
+                    <label class="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        class="rounded border-border accent-accent"
+                        checked={nodeConfig.interactive !== "false"}
+                        onchange={(e) => updateNodeConfig(selectedNode!.id, "interactive", (e.target as HTMLInputElement).checked ? "true" : "false")}
+                      />
+                      <span class="text-xs text-text-muted">Interactive mode</span>
+                    </label>
+                    <p class="text-[10px] text-text-muted -mt-2 ml-5">Runs Claude in a terminal — you can grant permissions and answer questions. When off, uses headless <code class="text-accent">--print</code> mode.</p>
+
+                    <label class="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        class="rounded border-border accent-accent"
+                        checked={nodeConfig.dangerouslySkipPermissions === "true"}
+                        onchange={(e) => updateNodeConfig(selectedNode!.id, "dangerouslySkipPermissions", (e.target as HTMLInputElement).checked ? "true" : "false")}
+                      />
+                      <span class="text-xs text-text-muted">Auto-accept all permissions</span>
+                    </label>
+                    <p class="text-[10px] text-text-muted -mt-2 ml-5">Adds <code class="text-accent">--dangerously-skip-permissions</code>. Claude won't ask for confirmation. Use only in safe environments.</p>
+
+                    <label class="block">
+                      <span class="text-xs text-text-muted font-medium">Working Directory</span>
+                      <input
+                        type="text"
+                        class="w-full mt-1 px-3 py-2 text-sm bg-bg-tertiary border border-border rounded-lg text-text-primary font-mono focus:outline-none focus:border-accent"
+                        placeholder="~/projects/my-app (default: home)"
+                        value={nodeConfig.path ?? ""}
+                        oninput={(e) => updateNodeConfig(selectedNode!.id, "path", (e.target as HTMLInputElement).value)}
+                      />
+                    </label>
                   </div>
 
                 <!-- Bash / GitHub -->
@@ -1007,8 +1210,22 @@
 
             <!-- Results Tab -->
             {:else if rightTab === "results"}
-              <div class="flex-1 overflow-y-auto">
-                {#if results.length === 0}
+              <div class="flex-1 overflow-y-auto flex flex-col">
+                {#if interactiveNodeId}
+                  <!-- Interactive terminal for Claude node -->
+                  <div class="border-b border-border px-3 py-2 flex items-center justify-between shrink-0">
+                    <div class="flex items-center gap-2">
+                      <span class="animate-pulse w-2 h-2 rounded-full bg-warning"></span>
+                      <span class="text-xs font-medium text-warning">Interactive — {interactiveNodeLabel}</span>
+                    </div>
+                    <span class="text-[10px] text-text-muted">Type to interact with Claude</span>
+                  </div>
+                  <div
+                    class="flex-1 min-h-[300px] bg-[#0d1117]"
+                    style="padding: 8px;"
+                    use:attachTerminalAction
+                  ></div>
+                {:else if results.length === 0}
                   <div class="flex flex-col items-center justify-center h-full text-text-muted p-4">
                     <Play size={20} class="opacity-30 mb-2" />
                     <p class="text-xs">Run the pipeline to see results</p>

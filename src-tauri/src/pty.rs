@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 
 pub struct PtySession {
-    master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    pub(crate) master: Box<dyn MasterPty + Send>,
+    pub(crate) writer: Box<dyn Write + Send>,
 }
 
 pub struct PtyState {
@@ -28,6 +28,8 @@ pub fn spawn_terminal(
     path: String,
     cols: u16,
     rows: u16,
+    prompt: Option<String>,
+    dangerously_skip_permissions: Option<bool>,
     state: tauri::State<PtyState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
@@ -43,6 +45,12 @@ pub fn spawn_terminal(
         .map_err(|e| format!("failed to open pty: {e}"))?;
 
     let mut cmd = CommandBuilder::new(crate::paths::claude_bin());
+    if dangerously_skip_permissions == Some(true) {
+        cmd.arg("--dangerously-skip-permissions");
+    }
+    if let Some(ref p) = prompt {
+        cmd.arg(p);
+    }
     cmd.cwd(&path);
 
     // Set TERM for proper color support

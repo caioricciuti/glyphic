@@ -19,7 +19,7 @@
   import JsonExtractNode from "./nodes/JsonExtractNode.svelte";
 
   import {
-    Bot, Terminal, GitBranch, Globe, Repeat, Clock, X,
+    Bot, Terminal, GitBranch, Globe, Repeat, Clock, X, Play, CircleDot,
     GitCommitHorizontal, Filter, FileInput, FileOutput, Bell, Braces,
   } from "lucide-svelte";
 
@@ -70,6 +70,7 @@
   let palettePos = $state({ x: 0, y: 0 });
 
   const NODE_PALETTE = [
+    { type: "input", label: "Start", icon: Play, color: "text-success" },
     { type: "claude", label: "Claude Prompt", icon: Bot, color: "text-accent" },
     { type: "bash", label: "Bash Command", icon: Terminal, color: "text-success" },
     { type: "git", label: "Git", icon: GitCommitHorizontal, color: "text-info" },
@@ -82,11 +83,16 @@
     { type: "writefile", label: "Write File", icon: FileOutput, color: "text-warning" },
     { type: "notification", label: "Notification", icon: Bell, color: "text-warning" },
     { type: "delay", label: "Delay", icon: Clock, color: "text-text-muted" },
+    { type: "output", label: "End", icon: CircleDot, color: "text-text-muted" },
   ];
 
   function onContextMenu(e: MouseEvent) {
     e.preventDefault();
-    palettePos = { x: e.clientX, y: e.clientY };
+    const menuW = 200;
+    const menuH = 560;
+    const x = Math.min(e.clientX, window.innerWidth - menuW);
+    const y = Math.min(e.clientY, window.innerHeight - menuH);
+    palettePos = { x: Math.max(0, x), y: Math.max(0, y) };
     showPalette = true;
   }
 
@@ -111,7 +117,7 @@
       {
         id,
         type,
-        position: { x: palettePos.x - 300, y: palettePos.y - 100 },
+        position: { x: Math.max(50, palettePos.x - 300), y: Math.max(50, palettePos.y - 100) },
         data: { label, config, status: "idle" },
       },
     ];
@@ -231,5 +237,9 @@
     border-radius: 8px;
     overflow: hidden;
     border: 1px solid var(--color-border);
+  }
+
+  :global(.svelte-flow .svelte-flow__attribution) {
+    display: none;
   }
 </style>
