@@ -71,6 +71,8 @@ pub fn run() {
             commands::pipelines::cancel_pipeline_run,
             commands::pipelines::run_single_node,
             commands::pipelines::resume_pipeline_node,
+            commands::pipelines::list_pipeline_history,
+            commands::pipelines::delete_pipeline_history,
             // Scheduler
             commands::scheduler::enable_pipeline_schedule,
             commands::scheduler::disable_pipeline_schedule,

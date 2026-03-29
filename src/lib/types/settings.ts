@@ -1,6 +1,6 @@
 export type EffortLevel = "low" | "medium" | "high";
 export type DefaultMode = "default" | "plan" | "acceptEdits" | "dontAsk" | "bypassPermissions";
-export type SettingsScope = "global" | "project" | "local";
+export type SettingsScope = "global" | "project" | "local" | "mcp-local" | "desktop";
 
 export interface Settings {
   model?: string;

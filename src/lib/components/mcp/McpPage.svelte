@@ -15,7 +15,7 @@
 
   let servers = $state<ServerEntry[]>([]);
   let cloudMcps = $state<string[]>([]);
-  let scope = $state<SettingsScope>("global");
+  let scope = $state<SettingsScope>("desktop");
   let loading = $state(true);
   let saving = $state(false);
   let saveMessage = $state<string | null>(null);
@@ -34,7 +34,13 @@
   let galleryOpen = $state(false);
 
   const projectPath = $derived(getSelectedProjectPath());
-  const needsProject = $derived(scope !== "global");
+  const needsProject = $derived(scope === "project" || scope === "mcp-local");
+  const scopeLabel: Record<string, string> = {
+    "desktop": "Claude Desktop",
+    "global": "Claude Code (user)",
+    "mcp-local": "Project (.mcp.json)",
+    "project": "Project (.claude/settings.json)",
+  };
 
   async function loadServers() {
     if (needsProject && !projectPath) { loading = false; servers = []; return; }
@@ -134,7 +140,7 @@
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-3">
         <div class="flex gap-1 bg-bg-tertiary rounded-lg p-1">
-          {#each [{ id: "global" as const, label: "Global" }, { id: "project" as const, label: "Project" }] as tab}
+          {#each [{ id: "desktop" as const, label: "Desktop" }, { id: "global" as const, label: "Global" }, { id: "mcp-local" as const, label: "Local" }, { id: "project" as const, label: "Project" }] as tab}
             <button
               class="px-4 py-1.5 text-sm rounded-md transition-colors {scope === tab.id ? 'bg-bg-secondary text-text-primary' : 'text-text-muted hover:text-text-secondary'}"
               onclick={() => { scope = tab.id; editing = null; loadServers(); }}
@@ -198,7 +204,7 @@
       <div>
         <h3 class="text-xs font-medium text-text-muted uppercase tracking-wider mb-2 flex items-center gap-1.5">
           <Terminal size={12} />
-          Local ({scope})
+          {scopeLabel[scope] ?? scope}
         </h3>
 
         {#if servers.length > 0}
@@ -242,7 +248,7 @@
         {:else}
           <div class="bg-bg-secondary border border-border rounded-lg p-8 text-center">
             <Server size={24} class="mx-auto mb-3 opacity-20 text-text-muted" />
-            <p class="text-sm text-text-muted mb-1">No local MCP servers configured</p>
+            <p class="text-sm text-text-muted mb-1">No MCP servers configured</p>
             <p class="text-xs text-text-muted">Add a server or browse templates</p>
           </div>
         {/if}

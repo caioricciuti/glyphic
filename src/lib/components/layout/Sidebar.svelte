@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { getVersion } from "@tauri-apps/api/app";
   import {
     NAV_ITEMS,
     getCurrentPage,
@@ -33,6 +34,7 @@
   import logoUrl from "$lib/assets/logo.png";
 
   let showAbout = $state(false);
+  let appVersion = $state("...");
 
   const currentPage = $derived(getCurrentPage());
 
@@ -65,14 +67,16 @@
 
   onMount(async () => {
     try {
-      const [s, set, cost] = await Promise.all([
+      const [s, set, cost, ver] = await Promise.all([
         api.stats.computeLive(),
         api.settings.read("global"),
         api.budget.getCostSummary(),
+        getVersion(),
       ]);
       stats = s as StatsCache;
       settings = set;
       costSummary = cost;
+      appVersion = ver;
     } catch {
       // Silently fail — sidebar XP is non-critical
     }
@@ -195,7 +199,7 @@
       <img src={logoUrl} alt="Glyphic" class="w-20 h-20 rounded-2xl mx-auto mb-4" />
       <h2 class="text-xl font-bold text-text-primary">Glyphic</h2>
       <p class="text-sm text-text-muted mt-1">AI Config Manager for Claude Code</p>
-      <p class="text-xs text-text-muted mt-1">Version 0.9.0</p>
+      <p class="text-xs text-text-muted mt-1">Version {appVersion}</p>
 
       <div class="mt-6 space-y-2">
         <a

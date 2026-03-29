@@ -47,6 +47,124 @@ pub struct PipelineStore {
     pub pipelines: Vec<Pipeline>,
 }
 
+// --- Run History ---
+
+const MAX_RUNS_PER_PIPELINE: usize = 50;
+const MAX_OUTPUT_LEN: usize = 10_000;
+const MAX_INPUT_LEN: usize = 5_000;
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct PipelineRunRecord {
+    pub id: String,
+    pub pipeline_id: String,
+    pub pipeline_name: String,
+    pub started_at: String,
+    pub completed_at: String,
+    pub status: String,
+    pub duration_ms: u64,
+    pub node_results: Vec<NodeRunResult>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct NodeRunResult {
+    pub node_id: String,
+    pub label: String,
+    pub node_type: String,
+    pub status: String,
+    pub duration_ms: u64,
+    pub input: String,
+    pub output: String,
+    pub config: String,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+pub struct PipelineHistoryStore {
+    pub runs: HashMap<String, Vec<PipelineRunRecord>>,
+}
+
+fn history_path() -> std::path::PathBuf {
+    paths::claude_home().join("glyphic-pipeline-history.json")
+}
+
+fn load_history() -> PipelineHistoryStore {
+    let path = history_path();
+    if !path.exists() { return PipelineHistoryStore::default(); }
+    fs::read_to_string(&path).ok()
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or_default()
+}
+
+fn save_history(store: &PipelineHistoryStore) -> Result<(), String> {
+    let content = serde_json::to_string_pretty(store).map_err(|e| format!("{e}"))?;
+    fs::write(history_path(), content).map_err(|e| format!("{e}"))
+}
+
+fn truncate_str(s: &str, max: usize) -> String {
+    if s.len() <= max { return s.to_string(); }
+    s.chars().take(max).collect::<String>() + "...(truncated)"
+}
+
+fn save_run_record(pipeline: &Pipeline, status: &str, duration_ms: u64, node_results: Vec<NodeRunResult>) {
+    let record = PipelineRunRecord {
+        id: format!("run-{}", std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()),
+        pipeline_id: pipeline.id.clone(),
+        pipeline_name: pipeline.name.clone(),
+        started_at: iso_now_offset(-(duration_ms as i64)),
+        completed_at: iso_now_offset(0),
+        status: status.to_string(),
+        duration_ms,
+        node_results,
+    };
+
+    let mut history = load_history();
+    let runs = history.runs.entry(pipeline.id.clone()).or_default();
+    runs.insert(0, record);
+    runs.truncate(MAX_RUNS_PER_PIPELINE);
+    let _ = save_history(&history);
+
+    // Also update last_run / last_run_status on the pipeline
+    let mut store = load_store();
+    if let Some(p) = store.pipelines.iter_mut().find(|p| p.id == pipeline.id) {
+        p.last_run = Some(iso_now_offset(0));
+        p.last_run_status = Some(status.to_string());
+        let _ = save_store(&store);
+    }
+}
+
+fn iso_now_offset(offset_ms: i64) -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64 + offset_ms;
+    let total_secs = secs / 1000;
+    let d = total_secs / 86400;
+    let rem = total_secs % 86400;
+    // Approximate ISO — good enough for display
+    let h = rem / 3600;
+    let m = (rem % 3600) / 60;
+    let s = rem % 60;
+    // Days since epoch → rough date
+    let days = d as u64;
+    let (y, mo, day) = days_to_date(days);
+    format!("{y:04}-{mo:02}-{day:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+fn days_to_date(days: u64) -> (u64, u64, u64) {
+    // Algorithm from http://howardhinnant.github.io/date_algorithms.html
+    let z = days + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
+// --- Pipeline Storage ---
+
 fn store_path() -> std::path::PathBuf {
     paths::claude_home().join("glyphic-pipelines.json")
 }
@@ -84,7 +202,25 @@ pub fn save_pipeline(pipeline: Pipeline) -> Result<(), String> {
 pub fn delete_pipeline(id: String) -> Result<(), String> {
     let mut store = load_store();
     store.pipelines.retain(|p| p.id != id);
-    save_store(&store)
+    save_store(&store)?;
+    // Clean up history
+    let mut history = load_history();
+    history.runs.remove(&id);
+    let _ = save_history(&history);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_pipeline_history(pipeline_id: String) -> Result<Vec<PipelineRunRecord>, String> {
+    let store = load_history();
+    Ok(store.runs.get(&pipeline_id).cloned().unwrap_or_default())
+}
+
+#[tauri::command]
+pub fn delete_pipeline_history(pipeline_id: String) -> Result<(), String> {
+    let mut store = load_history();
+    store.runs.remove(&pipeline_id);
+    save_history(&store)
 }
 
 // Static cancel flag
@@ -439,8 +575,11 @@ pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> R
             "message": format!("Started at {}", chrono_now()),
         }));
 
+        let run_start = std::time::Instant::now();
         let mut last_output: Option<String> = None;
         let mut all_outputs: HashMap<String, String> = HashMap::new();
+        let mut node_run_results: Vec<NodeRunResult> = Vec::new();
+        let mut run_status = "success";
 
         for node_id in &sorted {
             if CANCEL_FLAG.load(Ordering::SeqCst) {
@@ -448,6 +587,7 @@ pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> R
                     "type": "cancelled",
                     "node_id": node_id,
                 }));
+                run_status = "cancelled";
                 break;
             }
 
@@ -467,11 +607,13 @@ pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> R
                 continue;
             }
 
+            let node_input = last_output.clone().unwrap_or_default();
+
             let _ = app_handle.emit("pipeline-event", serde_json::json!({
                 "type": "node_start",
                 "node_id": node.id,
                 "label": node.label,
-                "input": last_output.clone().unwrap_or_default(),
+                "input": node_input,
                 "config": serde_json::to_string(&node.config).unwrap_or_default(),
                 "node_type": node.node_type,
             }));
@@ -545,6 +687,16 @@ pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> R
                     let duration = start.elapsed().as_millis() as u64;
                     all_outputs.insert(node.label.clone(), output.clone());
                     last_output = Some(output.clone());
+                    node_run_results.push(NodeRunResult {
+                        node_id: node.id.clone(),
+                        label: node.label.clone(),
+                        node_type: node.node_type.clone(),
+                        status: "done".to_string(),
+                        duration_ms: duration,
+                        input: truncate_str(&node_input, MAX_INPUT_LEN),
+                        output: truncate_str(&output, MAX_OUTPUT_LEN),
+                        config: serde_json::to_string(&node.config).unwrap_or_default(),
+                    });
                     let _ = app_handle.emit("pipeline-event", serde_json::json!({
                         "type": "node_done",
                         "node_id": node.id,
@@ -555,6 +707,17 @@ pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> R
                 }
                 Err(err) => {
                     let duration = start.elapsed().as_millis() as u64;
+                    node_run_results.push(NodeRunResult {
+                        node_id: node.id.clone(),
+                        label: node.label.clone(),
+                        node_type: node.node_type.clone(),
+                        status: "error".to_string(),
+                        duration_ms: duration,
+                        input: truncate_str(&node_input, MAX_INPUT_LEN),
+                        output: truncate_str(&err, MAX_OUTPUT_LEN),
+                        config: serde_json::to_string(&node.config).unwrap_or_default(),
+                    });
+                    run_status = "error";
                     let _ = app_handle.emit("pipeline-event", serde_json::json!({
                         "type": "node_error",
                         "node_id": node.id,
@@ -566,6 +729,10 @@ pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> R
                 }
             }
         }
+
+        // Save run history
+        let total_duration = run_start.elapsed().as_millis() as u64;
+        save_run_record(&pipeline, run_status, total_duration, node_run_results);
 
         let _ = app_handle.emit("pipeline-event", serde_json::json!({
             "type": "completed",

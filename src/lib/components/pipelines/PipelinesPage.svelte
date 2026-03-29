@@ -40,8 +40,23 @@
   let deleteDialogOpen = $state(false);
   let showPipelineList = $state(false);
   let selectedNode = $state<Node | null>(null);
-  let rightTab = $state<"config" | "results" | "logs">("config");
+  let rightTab = $state<"config" | "results" | "logs" | "history">("config");
   let highlightedResultId = $state<string | null>(null);
+
+  // History state
+  interface PipelineRunRecord {
+    id: string;
+    pipeline_id: string;
+    pipeline_name: string;
+    started_at: string;
+    completed_at: string;
+    status: string;
+    duration_ms: number;
+    node_results: { node_id: string; label: string; node_type: string; status: string; duration_ms: number; input: string; output: string; config: string }[];
+  }
+  let historyRuns = $state<PipelineRunRecord[]>([]);
+  let selectedHistoryRun = $state<PipelineRunRecord | null>(null);
+  let loadingHistory = $state(false);
 
   // Execution state from persistent store (survives navigation)
   const running = $derived(getRunning());
@@ -239,6 +254,8 @@
     scheduleExpr = p.schedule ?? "";
     scheduleEnabled = p.schedule_enabled ?? false;
     scheduleLogs = [];
+    historyRuns = [];
+    selectedHistoryRun = null;
   }
 
   function createNew() {
@@ -321,6 +338,18 @@
     }
   }
 
+  async function loadHistory() {
+    if (!activePipelineId) return;
+    loadingHistory = true;
+    try {
+      historyRuns = await invoke<PipelineRunRecord[]>("list_pipeline_history", { pipelineId: activePipelineId });
+    } catch (e) {
+      console.error("Load history failed:", e);
+    } finally {
+      loadingHistory = false;
+    }
+  }
+
   async function loadScheduleLogs() {
     if (!activePipelineId) return;
     try {
@@ -354,7 +383,8 @@
     (selectedNode && selectedNode.type !== "input" && selectedNode.type !== "output") ||
     results.length > 0 ||
     interactiveNodeId !== null ||
-    rightTab === "logs"
+    rightTab === "logs" ||
+    rightTab === "history"
   );
 
   // Derived: selected node config shorthand
@@ -591,6 +621,12 @@
                 onclick={() => { rightTab = "logs"; loadScheduleLogs(); }}
               >
                 Logs {scheduleLogs.length > 0 ? `(${scheduleLogs.length})` : ""}
+              </button>
+              <button
+                class="flex-1 px-3 py-2 text-xs font-medium transition-colors {rightTab === 'history' ? 'text-accent border-b-2 border-accent' : 'text-text-muted hover:text-text-secondary'}"
+                onclick={() => { rightTab = "history"; loadHistory(); }}
+              >
+                History {historyRuns.length > 0 ? `(${historyRuns.length})` : ""}
               </button>
             </div>
 
@@ -1125,6 +1161,70 @@
                       </summary>
                       <pre class="px-3 py-2 text-[10px] text-text-secondary font-mono whitespace-pre-wrap max-h-64 overflow-y-auto bg-bg-tertiary m-2 rounded p-2">{log.content}</pre>
                     </details>
+                  {/each}
+                {/if}
+              </div>
+
+            <!-- History Tab -->
+            {:else if rightTab === "history"}
+              <div class="flex-1 overflow-y-auto flex flex-col">
+                {#if selectedHistoryRun}
+                  <div class="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
+                    <button class="text-[10px] text-accent hover:underline" onclick={() => (selectedHistoryRun = null)}>
+                      &larr; Back to history
+                    </button>
+                    <span class="text-[10px] text-text-muted">{selectedHistoryRun.node_results.length} nodes &middot; {(selectedHistoryRun.duration_ms / 1000).toFixed(1)}s</span>
+                  </div>
+                  {#each selectedHistoryRun.node_results as result}
+                    <details class="border-b border-border/50">
+                      <summary class="px-3 py-2 cursor-pointer hover:bg-bg-hover list-none flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full shrink-0 {result.status === 'done' ? 'bg-success' : 'bg-danger'}"></span>
+                        <span class="text-xs font-medium text-text-primary flex-1 truncate">{result.label}</span>
+                        <span class="text-[10px] text-text-muted shrink-0">{result.duration_ms.toLocaleString()}ms</span>
+                      </summary>
+                      <div class="px-3 pb-3 space-y-2">
+                        {#if result.input}
+                          <div>
+                            <span class="text-[10px] text-text-muted font-medium uppercase tracking-wider">Input</span>
+                            <pre class="text-[10px] text-text-secondary font-mono whitespace-pre-wrap max-h-32 overflow-y-auto bg-bg-tertiary rounded p-2 mt-1">{result.input}</pre>
+                          </div>
+                        {/if}
+                        <div>
+                          <span class="text-[10px] text-text-muted font-medium uppercase tracking-wider">Output</span>
+                          <pre class="text-[10px] font-mono whitespace-pre-wrap max-h-48 overflow-y-auto bg-bg-tertiary rounded p-2 mt-1 {result.status === 'error' ? 'text-danger' : 'text-text-secondary'}">{result.output}</pre>
+                        </div>
+                      </div>
+                    </details>
+                  {/each}
+                {:else if loadingHistory}
+                  <div class="flex flex-col items-center justify-center h-full text-text-muted p-4">
+                    <p class="text-xs">Loading...</p>
+                  </div>
+                {:else if historyRuns.length === 0}
+                  <div class="flex flex-col items-center justify-center h-full text-text-muted p-4">
+                    <Clock size={20} class="opacity-30 mb-2" />
+                    <p class="text-xs">No run history yet</p>
+                    <p class="text-[10px] mt-1">Run this pipeline to see history</p>
+                  </div>
+                {:else}
+                  <div class="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
+                    <span class="text-[10px] text-text-muted">{historyRuns.length} runs</span>
+                    <button class="text-text-muted hover:text-text-primary text-[10px]" onclick={loadHistory}>Refresh</button>
+                  </div>
+                  {#each historyRuns as run}
+                    <button
+                      class="w-full text-left px-3 py-2.5 border-b border-border/50 hover:bg-bg-hover flex items-center gap-2"
+                      onclick={() => (selectedHistoryRun = run)}
+                    >
+                      <span class="w-2 h-2 rounded-full shrink-0 {run.status === 'success' ? 'bg-success' : run.status === 'error' ? 'bg-danger' : 'bg-warning'}"></span>
+                      <div class="flex-1 min-w-0">
+                        <span class="text-xs text-text-primary">{new Date(run.started_at).toLocaleString()}</span>
+                        <div class="text-[10px] text-text-muted">{run.node_results.length} nodes &middot; {(run.duration_ms / 1000).toFixed(1)}s</div>
+                      </div>
+                      <span class="text-[10px] px-1.5 py-0.5 rounded {run.status === 'success' ? 'bg-success/20 text-success' : run.status === 'error' ? 'bg-danger/20 text-danger' : 'bg-warning/20 text-warning'}">
+                        {run.status}
+                      </span>
+                    </button>
                   {/each}
                 {/if}
               </div>

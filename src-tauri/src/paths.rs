@@ -95,6 +95,17 @@ pub fn project_local_settings_path(project_path: &str) -> PathBuf {
         .join("settings.local.json")
 }
 
+pub fn project_mcp_json_path(project_path: &str) -> PathBuf {
+    PathBuf::from(project_path).join(".mcp.json")
+}
+
+pub fn claude_desktop_config_path() -> PathBuf {
+    dirs::data_dir()
+        .unwrap_or_default()
+        .join("Claude")
+        .join("claude_desktop_config.json")
+}
+
 pub fn stats_cache_path() -> PathBuf {
     claude_home().join("stats-cache.json")
 }
