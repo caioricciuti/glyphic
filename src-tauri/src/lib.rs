@@ -1,4 +1,5 @@
 mod commands;
+pub mod filter;
 mod paths;
 mod pty;
 
@@ -97,6 +98,14 @@ pub fn run() {
             pty::write_terminal,
             pty::resize_terminal,
             pty::kill_terminal,
+            // Token Savings
+            commands::token_savings::get_optimizer_status,
+            commands::token_savings::enable_optimizer,
+            commands::token_savings::disable_optimizer,
+            commands::token_savings::get_savings_data,
+            commands::token_savings::discover_opportunities,
+            commands::token_savings::get_filter_rules,
+            commands::token_savings::save_filter_rules,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

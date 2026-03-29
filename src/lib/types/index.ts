@@ -18,3 +18,13 @@ export type { MemoryFile, ProjectInfo } from "./memory";
 export type { InstructionFile } from "./instructions";
 export type { SkillInfo } from "./skills";
 export type { RuleFile } from "./rules";
+export type {
+  OptimizerStatus,
+  SavingsSummary,
+  SavingsTimeBucket,
+  CommandSavings,
+  SavingsData,
+  DiscoverOpportunity,
+  DiscoverResult,
+  FilterRules,
+} from "./token-savings";

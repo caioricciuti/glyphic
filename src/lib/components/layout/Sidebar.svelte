@@ -27,6 +27,7 @@
     Sun,
     Moon,
     History,
+    Gauge,
   } from "lucide-svelte";
   import { getTheme, toggleTheme } from "$lib/stores/theme.svelte";
   import type { CostSummary } from "$lib/tauri/commands";
@@ -61,6 +62,7 @@
     templates: LayoutGrid,
     terminal: TerminalSquare,
     analytics: Activity,
+    savings: Gauge,
   };
 
   const currentTheme = $derived(getTheme());

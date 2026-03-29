@@ -17,6 +17,7 @@
     pipelines: "Pipelines",
     sessions: "Sessions",
     templates: "Templates",
+    "token-savings": "Token Savings",
   };
 
   const PAGE_DESCRIPTIONS: Record<Page, string> = {
@@ -35,6 +36,7 @@
     pipelines: "Visual workflow builder with Claude Code",
     sessions: "Replay and review past Claude Code sessions",
     templates: "Browse and add pre-built configurations",
+    "token-savings": "Optimize token usage with automatic command output filtering",
   };
 
   const currentPage = $derived(getCurrentPage());

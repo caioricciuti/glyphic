@@ -13,7 +13,8 @@ export type Page =
   | "analytics"
   | "templates"
   | "sessions"
-  | "pipelines";
+  | "pipelines"
+  | "token-savings";
 
 export interface NavItem {
   id: Page;
@@ -37,6 +38,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "templates", label: "Templates", icon: "templates" },
   { id: "terminal", label: "Terminal", icon: "terminal" },
   { id: "analytics", label: "Analytics", icon: "analytics" },
+  { id: "token-savings", label: "Token Savings", icon: "savings" },
 ];
 
 let currentPage = $state<Page>("dashboard");

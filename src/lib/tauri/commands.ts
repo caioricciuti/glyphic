@@ -9,6 +9,10 @@ import type {
   SkillInfo,
   RuleFile,
   HookEventConfig,
+  OptimizerStatus,
+  SavingsData,
+  DiscoverResult,
+  FilterRules,
 } from "$lib/types";
 
 export const api = {
@@ -168,6 +172,22 @@ export const api = {
       invoke<string>("git_init", { path }),
     openInTerminal: (path: string) =>
       invoke<void>("open_in_terminal", { path }),
+  },
+
+  tokenSavings: {
+    status: () => invoke<OptimizerStatus>("get_optimizer_status"),
+    enable: () => invoke<void>("enable_optimizer"),
+    disable: () => invoke<void>("disable_optimizer"),
+    savings: (period?: string, projectPath?: string) =>
+      invoke<SavingsData>("get_savings_data", {
+        period: period ?? "daily",
+        projectPath,
+      }),
+    discover: (projectPath?: string) =>
+      invoke<DiscoverResult>("discover_opportunities", { projectPath }),
+    getFilters: () => invoke<FilterRules>("get_filter_rules"),
+    saveFilters: (content: string) =>
+      invoke<void>("save_filter_rules", { content }),
   },
 } as const;
 

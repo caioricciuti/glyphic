@@ -17,6 +17,7 @@
   import TemplatesPage from "$lib/components/templates/TemplatesPage.svelte";
   import TerminalPage from "$lib/components/terminal/TerminalPage.svelte";
   import AnalyticsPage from "$lib/components/analytics/AnalyticsPage.svelte";
+  import TokenSavingsPage from "$lib/components/token-savings/TokenSavingsPage.svelte";
   import { getCurrentPage } from "$lib/stores/navigation.svelte";
 
   const currentPage = $derived(getCurrentPage());
@@ -60,6 +61,8 @@
         <TerminalPage />
       {:else if currentPage === "analytics"}
         <AnalyticsPage />
+      {:else if currentPage === "token-savings"}
+        <TokenSavingsPage />
       {/if}
     </div>
   </main>
