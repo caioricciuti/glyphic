@@ -28,19 +28,30 @@ fn main() {
 
 // ── Hook mode ───────────────────────────────────────────────────────────────
 
+/// Print a bare "allow" response (no input modification).
+fn print_allow() {
+    let response = serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow"
+        }
+    });
+    println!("{}", serde_json::to_string(&response).unwrap());
+}
+
 /// Read Claude Code hook JSON from stdin, rewrite command if a filter matches.
 fn handle_hook() {
     let mut input = String::new();
     if io::stdin().read_to_string(&mut input).is_err() {
         // Can't read stdin — allow unchanged
-        println!(r#"{{"decision":"allow"}}"#);
+        print_allow();
         return;
     }
 
     let json: serde_json::Value = match serde_json::from_str(&input) {
         Ok(v) => v,
         Err(_) => {
-            println!(r#"{{"decision":"allow"}}"#);
+            print_allow();
             return;
         }
     };
@@ -57,13 +68,13 @@ fn handle_hook() {
 
     // Only intercept Bash tool with non-empty commands
     if tool_name != "Bash" || command.is_empty() {
-        println!(r#"{{"decision":"allow"}}"#);
+        print_allow();
         return;
     }
 
     // Never rewrite excluded commands
     if should_exclude(command) {
-        println!(r#"{{"decision":"allow"}}"#);
+        print_allow();
         return;
     }
 
@@ -76,15 +87,19 @@ fn handle_hook() {
         let rewritten = format!(r#""{bin_str}" exec "{escaped}""#);
 
         let response = serde_json::json!({
-            "decision": "allow",
-            "updatedInput": {
-                "command": rewritten
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "permissionDecisionReason": "glyphic-filter: wrapping command for token optimization",
+                "updatedInput": {
+                    "command": rewritten
+                }
             }
         });
         println!("{}", serde_json::to_string(&response).unwrap());
     } else {
         // No filter — allow unchanged
-        println!(r#"{{"decision":"allow"}}"#);
+        print_allow();
     }
 }
 

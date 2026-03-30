@@ -27,7 +27,7 @@ pub fn get_optimizer_status() -> Result<OptimizerStatus, String> {
     let bin = SavingsTracker::bin_path();
     let sidecar_installed = bin.exists();
 
-    let sidecar_version = if sidecar_installed {
+    let mut sidecar_version = if sidecar_installed {
         std::process::Command::new(&bin)
             .arg("version")
             .output()
@@ -37,6 +37,24 @@ pub fn get_optimizer_status() -> Result<OptimizerStatus, String> {
     } else {
         None
     };
+
+    // Auto-upgrade sidecar if version doesn't match the app
+    let app_version = format!("glyphic-filter {}", env!("CARGO_PKG_VERSION"));
+    if sidecar_installed && sidecar_version.as_deref() != Some(&app_version) {
+        if let Ok(source) = find_sidecar_source() {
+            if std::fs::copy(&source, &bin).is_ok() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(
+                        &bin,
+                        std::fs::Permissions::from_mode(0o755),
+                    );
+                }
+                sidecar_version = Some(app_version);
+            }
+        }
+    }
 
     let hook_installed = check_hook_installed();
     let log_path = SavingsTracker::log_path();
