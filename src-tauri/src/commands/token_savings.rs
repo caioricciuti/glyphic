@@ -275,9 +275,16 @@ pub fn disable_optimizer() -> Result<(), String> {
             if let Some(arr) = pre_tool_use.as_array_mut() {
                 arr.retain(|entry| {
                     !entry
-                        .get("command")
-                        .and_then(|c| c.as_str())
-                        .map(|c| c.contains("glyphic-optimizer"))
+                        .get("hooks")
+                        .and_then(|h| h.as_array())
+                        .map(|hooks| {
+                            hooks.iter().any(|h| {
+                                h.get("command")
+                                    .and_then(|c| c.as_str())
+                                    .map(|c| c.contains("glyphic-optimizer"))
+                                    .unwrap_or(false)
+                            })
+                        })
                         .unwrap_or(false)
                 });
 
