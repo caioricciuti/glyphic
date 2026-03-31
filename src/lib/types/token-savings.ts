@@ -31,10 +31,27 @@ export interface CommandSavings {
   avgSavingsPct: number;
 }
 
+export interface ToolTypeSavings {
+  toolType: string;
+  count: number;
+  totalInput: number;
+  totalOutput: number;
+  totalSaved: number;
+  avgSavingsPct: number;
+}
+
 export interface SavingsData {
   summary: SavingsSummary;
   daily: SavingsTimeBucket[];
   topCommands: CommandSavings[];
+  toolBreakdown: ToolTypeSavings[];
+}
+
+export interface ToolTypeBreakdown {
+  toolType: string;
+  count: number;
+  estimatedTokens: number;
+  pctOfTotal: number;
 }
 
 export interface DiscoverOpportunity {
@@ -50,6 +67,7 @@ export interface DiscoverResult {
   totalCommands: number;
   opportunities: DiscoverOpportunity[];
   totalPotentialSavings: number;
+  toolBreakdown: ToolTypeBreakdown[];
 }
 
 export interface FilterRules {

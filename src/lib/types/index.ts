@@ -23,6 +23,8 @@ export type {
   SavingsSummary,
   SavingsTimeBucket,
   CommandSavings,
+  ToolTypeSavings,
+  ToolTypeBreakdown,
   SavingsData,
   DiscoverOpportunity,
   DiscoverResult,

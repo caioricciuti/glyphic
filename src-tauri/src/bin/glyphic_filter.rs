@@ -39,11 +39,10 @@ fn print_allow() {
     println!("{}", serde_json::to_string(&response).unwrap());
 }
 
-/// Read Claude Code hook JSON from stdin, rewrite command if a filter matches.
+/// Read Claude Code hook JSON from stdin, dispatch by tool type.
 fn handle_hook() {
     let mut input = String::new();
     if io::stdin().read_to_string(&mut input).is_err() {
-        // Can't read stdin — allow unchanged
         print_allow();
         return;
     }
@@ -60,47 +59,218 @@ fn handle_hook() {
         .get("tool_name")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let command = json
-        .get("tool_input")
+    let tool_input = json.get("tool_input");
+
+    match tool_name {
+        "Bash" => handle_bash_hook(tool_input),
+        "Read" => handle_read_hook(tool_input),
+        "Grep" => handle_grep_hook(tool_input),
+        _ => print_allow(),
+    }
+}
+
+/// Bash hook: wrap command through glyphic-filter exec for output filtering.
+fn handle_bash_hook(tool_input: Option<&serde_json::Value>) {
+    let command = tool_input
         .and_then(|ti| ti.get("command"))
         .and_then(|c| c.as_str())
         .unwrap_or("");
 
-    // Only intercept Bash tool with non-empty commands
-    if tool_name != "Bash" || command.is_empty() {
+    if command.is_empty() || should_exclude(command) {
         print_allow();
         return;
     }
 
-    // Never rewrite excluded commands
-    if should_exclude(command) {
-        print_allow();
-        return;
-    }
+    let bin = filter::tracker::SavingsTracker::bin_path();
+    let bin_str = bin.to_string_lossy();
+    let escaped = command.replace('\\', r"\\").replace('"', r#"\""#);
+    let rewritten = format!(r#""{bin_str}" exec "{escaped}""#);
 
-    // Check if any filter matches
-    if filter::find_filter(command).is_some() {
-        let bin = filter::tracker::SavingsTracker::bin_path();
-        let bin_str = bin.to_string_lossy();
-        // Escape the command for shell embedding
-        let escaped = command.replace('\\', r"\\").replace('"', r#"\""#);
-        let rewritten = format!(r#""{bin_str}" exec "{escaped}""#);
-
-        let response = serde_json::json!({
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "allow",
-                "permissionDecisionReason": "glyphic-filter: wrapping command for token optimization",
-                "updatedInput": {
-                    "command": rewritten
-                }
+    let response = serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "permissionDecisionReason": "glyphic-filter: wrapping command for token optimization",
+            "updatedInput": {
+                "command": rewritten
             }
-        });
-        println!("{}", serde_json::to_string(&response).unwrap());
-    } else {
-        // No filter — allow unchanged
+        }
+    });
+    println!("{}", serde_json::to_string(&response).unwrap());
+}
+
+/// Read hook: set smart `limit` based on file size to prevent oversized reads.
+fn handle_read_hook(tool_input: Option<&serde_json::Value>) {
+    let ti = match tool_input {
+        Some(v) => v,
+        None => { print_allow(); return; }
+    };
+
+    // If limit or offset already set, Claude is being intentional — don't touch
+    if ti.get("limit").and_then(|v| v.as_u64()).is_some()
+        || ti.get("offset").and_then(|v| v.as_u64()).is_some()
+    {
         print_allow();
+        return;
     }
+
+    let file_path = match ti.get("file_path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => { print_allow(); return; }
+    };
+
+    // Skip binary/non-text extensions
+    if is_binary_extension(file_path) {
+        print_allow();
+        return;
+    }
+
+    // Get file size via stat (sub-millisecond, no I/O beyond syscall)
+    let file_size = match std::fs::metadata(file_path) {
+        Ok(m) => m.len(),
+        Err(_) => { print_allow(); return; } // file doesn't exist — let Claude's tool handle the error
+    };
+
+    // Estimate line count (avg ~50 bytes per line for source code)
+    let estimated_lines = file_size / 50;
+
+    // Conservative tiered limits
+    let limit: Option<u64> = if estimated_lines < 300 {
+        None // small file, full read is fine
+    } else if estimated_lines < 1000 {
+        Some(500)
+    } else if estimated_lines < 3000 {
+        Some(300)
+    } else {
+        Some(200)
+    };
+
+    let limit = match limit {
+        Some(l) => l,
+        None => { print_allow(); return; }
+    };
+
+    // Log estimated savings
+    let estimated_output_bytes = limit as usize * 50;
+    let project = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let ext = std::path::Path::new(file_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("unknown");
+    let cmd_label = format!("Read .{ext}");
+
+    let _ = filter::tracker::SavingsTracker::record(
+        &cmd_label,
+        file_size as usize,
+        estimated_output_bytes,
+        0,
+        &project,
+        "Read",
+    );
+
+    // Return updated input with limit
+    let mut updated = ti.clone();
+    updated.as_object_mut().map(|o| o.insert("limit".to_string(), serde_json::json!(limit)));
+
+    let response = serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "permissionDecisionReason": format!("glyphic-filter: capping read to {limit} lines (file ~{estimated_lines} lines)"),
+            "updatedInput": updated
+        }
+    });
+    println!("{}", serde_json::to_string(&response).unwrap());
+}
+
+/// Grep hook: reduce head_limit to prevent oversized search results.
+fn handle_grep_hook(tool_input: Option<&serde_json::Value>) {
+    let ti = match tool_input {
+        Some(v) => v,
+        None => { print_allow(); return; }
+    };
+
+    let current_limit = ti.get("head_limit").and_then(|v| v.as_u64());
+
+    // If explicitly set below 100, Claude chose a conservative limit — don't touch
+    if let Some(limit) = current_limit {
+        if limit < 100 {
+            print_allow();
+            return;
+        }
+    }
+
+    let output_mode = ti.get("output_mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("files_with_matches");
+
+    let new_limit: u64 = match output_mode {
+        "content" => 75,
+        "count" => { print_allow(); return; } // count output is tiny
+        _ => 100, // files_with_matches and others
+    };
+
+    // Don't modify if current limit is already at or below our target
+    if let Some(current) = current_limit {
+        if current <= new_limit {
+            print_allow();
+            return;
+        }
+    }
+
+    let original_limit = current_limit.unwrap_or(250); // Claude's default
+
+    // Log estimated savings
+    let bytes_per_result: usize = if output_mode == "content" { 120 } else { 80 };
+    let input_bytes = original_limit as usize * bytes_per_result;
+    let output_bytes = new_limit as usize * bytes_per_result;
+    let project = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let _ = filter::tracker::SavingsTracker::record(
+        &format!("Grep {output_mode}"),
+        input_bytes,
+        output_bytes,
+        0,
+        &project,
+        "Grep",
+    );
+
+    let mut updated = ti.clone();
+    updated.as_object_mut().map(|o| o.insert("head_limit".to_string(), serde_json::json!(new_limit)));
+
+    let response = serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "permissionDecisionReason": format!("glyphic-filter: reducing head_limit from {original_limit} to {new_limit}"),
+            "updatedInput": updated
+        }
+    });
+    println!("{}", serde_json::to_string(&response).unwrap());
+}
+
+/// Check if file extension suggests binary/non-text content.
+fn is_binary_extension(path: &str) -> bool {
+    let binary_exts = [
+        "png", "jpg", "jpeg", "gif", "bmp", "ico", "svg", "webp",
+        "pdf", "wasm", "bin", "exe", "dll", "so", "dylib",
+        "zip", "tar", "gz", "bz2", "xz", "7z", "rar",
+        "mp3", "mp4", "avi", "mov", "mkv", "wav", "flac",
+        "ttf", "otf", "woff", "woff2", "eot",
+        "lock", "lockb",
+        "pyc", "pyo", "class",
+        "sqlite", "db",
+    ];
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|ext| binary_exts.contains(&ext.to_lowercase().as_str()))
+        .unwrap_or(false)
 }
 
 /// Commands that should never be rewritten.
@@ -186,6 +356,7 @@ fn handle_exec(args: &[String]) {
                 filtered_len,
                 elapsed_ms,
                 &project,
+                "Bash",
             );
 
             // Output filtered result

@@ -203,7 +203,7 @@
           </h2>
           <p class="text-xs text-text-muted">
             {#if isEnabled}
-              Active — filtering command output to save tokens
+              Active — optimizing Bash output, file reads, and search results
             {:else}
               Disabled — enable to start saving tokens automatically
             {/if}
@@ -274,18 +274,18 @@
             <Zap size={28} class="text-accent" />
           </div>
           <h3 class="text-lg font-semibold text-text-primary mb-2">
-            Save 60-90% of tokens on command output
+            Save tokens across all Claude Code tools
           </h3>
           <p class="text-sm text-text-muted max-w-md mx-auto mb-6">
-            The Token Optimizer intercepts Claude Code shell commands and
-            compresses their output using intelligent filters. Less noise, same
-            information, massive token savings.
+            The Token Optimizer intercepts Bash output, file reads, and search
+            results — the three biggest token consumers. Smart filtering and
+            input capping, massive savings.
           </p>
           <div class="grid grid-cols-3 gap-4 max-w-sm mx-auto mb-6">
             {#each [
-              { label: "git status", savings: "~81%" },
-              { label: "cargo test", savings: "~85%" },
-              { label: "npm install", savings: "~90%" },
+              { label: "Bash output", savings: "60-90%" },
+              { label: "File reads", savings: "40-60%" },
+              { label: "Grep results", savings: "50-70%" },
             ] as example}
               <div class="bg-bg-hover rounded-lg p-3">
                 <p class="text-xs text-text-muted">{example.label}</p>
@@ -388,6 +388,47 @@
                 >{formatTokens(savings.summary.totalInputTokens)} input → {formatTokens(savings.summary.totalOutputTokens)} output</span
               >
               <span class="text-[10px] text-text-muted">100%</span>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Tool Type Breakdown -->
+        {#if savings && savings.toolBreakdown && savings.toolBreakdown.length > 0}
+          {@const totalSaved = savings.toolBreakdown.reduce((s, t) => s + t.totalSaved, 0)}
+          <div class="bg-bg-secondary border border-border rounded-lg p-4">
+            <div class="flex items-center gap-2 mb-3">
+              <Zap size={14} class="text-text-muted" />
+              <h3 class="text-sm font-medium text-text-secondary">
+                Savings by Tool Type
+              </h3>
+            </div>
+            <!-- Stacked bar -->
+            {#if totalSaved > 0}
+              <div class="flex h-4 rounded-full overflow-hidden mb-3">
+                {#each savings.toolBreakdown as tool}
+                  {@const pct = (tool.totalSaved / totalSaved) * 100}
+                  {#if pct > 0}
+                    <div
+                      class="h-full transition-all {tool.toolType === 'Bash' ? 'bg-accent' : tool.toolType === 'Read' ? 'bg-success' : 'bg-warning'}"
+                      style="width: {pct}%"
+                      title="{tool.toolType}: {formatTokens(tool.totalSaved)} tokens saved ({pct.toFixed(0)}%)"
+                    ></div>
+                  {/if}
+                {/each}
+              </div>
+            {/if}
+            <div class="grid grid-cols-3 gap-3">
+              {#each savings.toolBreakdown as tool}
+                <div class="flex items-center gap-2">
+                  <div class="w-2.5 h-2.5 rounded-full shrink-0 {tool.toolType === 'Bash' ? 'bg-accent' : tool.toolType === 'Read' ? 'bg-success' : 'bg-warning'}"></div>
+                  <div>
+                    <p class="text-xs font-medium text-text-primary">{tool.toolType}</p>
+                    <p class="text-[10px] text-text-muted">
+                      {formatTokens(tool.totalSaved)} saved · {tool.count} ops · {tool.avgSavingsPct.toFixed(0)}% avg
+                    </p>
+                  </div>
+                </div>
+              {/each}
             </div>
           </div>
         {/if}
@@ -607,6 +648,31 @@
           </div>
         </div>
 
+        <!-- Tool Type Distribution -->
+        {#if discover.toolBreakdown && discover.toolBreakdown.length > 0}
+          <div class="bg-bg-secondary border border-border rounded-lg p-4">
+            <h3 class="text-sm font-medium text-text-secondary mb-3">
+              Token Distribution by Tool Type
+            </h3>
+            <div class="space-y-2">
+              {#each discover.toolBreakdown as tool}
+                <div class="flex items-center gap-3">
+                  <span class="text-xs font-mono text-text-primary w-12">{tool.toolType}</span>
+                  <div class="flex-1 h-3 bg-bg-hover rounded-full overflow-hidden">
+                    <div
+                      class="h-full rounded-full transition-all {tool.toolType === 'Bash' ? 'bg-accent' : tool.toolType === 'Read' ? 'bg-success' : 'bg-warning'}"
+                      style="width: {tool.pctOfTotal}%"
+                    ></div>
+                  </div>
+                  <span class="text-xs text-text-muted w-20 text-right">
+                    {tool.pctOfTotal.toFixed(0)}% · {formatTokens(tool.estimatedTokens)}
+                  </span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
         <!-- Opportunities Table -->
         {#if discover.opportunities.length > 0}
           <div class="bg-bg-secondary border border-border rounded-lg overflow-hidden">
@@ -705,17 +771,25 @@
               "git log",
               "git diff",
               "git show",
-              "ls",
-              "tree",
-              "find",
+              "ls / tree / find",
               "grep / rg",
               "npm test / bun test",
-              "npm install",
+              "npm install / bun install",
               "cargo test",
-              "cargo build",
+              "cargo build / check",
+              "python / uv run",
+              "pip install / uv add",
+              "pytest",
+              "go build / test",
+              "bun run",
+              "make",
+              "kubectl",
+              "docker ps / build",
               "curl",
-              "docker ps",
-              "cat",
+              "cat / bat",
+              "du / df / wc",
+              "Read (file size cap)",
+              "Grep (result limit)",
             ] as name}
               <div
                 class="flex items-center gap-2 px-3 py-1.5 rounded text-xs"

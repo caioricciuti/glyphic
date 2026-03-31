@@ -6,6 +6,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::filter::estimate_tokens;
 
+fn default_tool_type() -> String {
+    "Bash".to_string()
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SavingsRecord {
     /// Unix timestamp in seconds
@@ -26,6 +30,9 @@ pub struct SavingsRecord {
     pub time_ms: u64,
     /// Project directory (if determinable from cwd)
     pub project: String,
+    /// Tool type: "Bash", "Read", "Grep"
+    #[serde(default = "default_tool_type")]
+    pub tool_type: String,
 }
 
 pub struct SavingsTracker;
@@ -60,6 +67,7 @@ impl SavingsTracker {
         output_bytes: usize,
         time_ms: u64,
         project: &str,
+        tool_type: &str,
     ) -> Result<(), String> {
         let dir = Self::data_dir();
         fs::create_dir_all(&dir).map_err(|e| format!("failed to create data dir: {e}"))?;
@@ -85,6 +93,7 @@ impl SavingsTracker {
             savings_pct,
             time_ms,
             project: project.to_string(),
+            tool_type: tool_type.to_string(),
         };
 
         let line =
@@ -108,12 +117,9 @@ fn normalize_command(cmd: &str) -> String {
     let trimmed = cmd.trim();
     let parts: Vec<&str> = trimmed.split_whitespace().collect();
     match parts.first().map(|s| *s) {
-        Some("git") => parts.iter().take(2).copied().collect::<Vec<_>>().join(" "),
-        Some("cargo") => parts.iter().take(2).copied().collect::<Vec<_>>().join(" "),
-        Some("npm") => parts.iter().take(2).copied().collect::<Vec<_>>().join(" "),
-        Some("bun") => parts.iter().take(2).copied().collect::<Vec<_>>().join(" "),
-        Some("docker") => parts.iter().take(2).copied().collect::<Vec<_>>().join(" "),
-        Some("npx") => parts.iter().take(2).copied().collect::<Vec<_>>().join(" "),
+        Some("git" | "cargo" | "npm" | "bun" | "docker" | "npx" | "kubectl" | "go" | "uv" | "pip" | "pip3") => {
+            parts.iter().take(2).copied().collect::<Vec<_>>().join(" ")
+        }
         Some(base) => base.to_string(),
         None => trimmed.to_string(),
     }

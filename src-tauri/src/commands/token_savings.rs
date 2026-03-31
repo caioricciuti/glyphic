@@ -185,12 +185,13 @@ pub fn enable_optimizer() -> Result<(), String> {
         serde_json::json!({})
     };
 
+    // No matcher — fires for all tool calls. The sidecar routes by tool_name internally
+    // to handle Bash (output filtering), Read (limit capping), and Grep (head_limit reduction).
     let hook_entry = serde_json::json!({
         "hooks": [{
             "type": "command",
             "command": format!("bash \"{}\"", hook_path.to_string_lossy())
-        }],
-        "matcher": "Bash"
+        }]
     });
 
     // Ensure hooks.PreToolUse exists and add our hook (avoid duplicates)
@@ -366,11 +367,28 @@ pub struct CommandSavings {
 }
 
 #[derive(Serialize)]
+pub struct ToolTypeSavings {
+    #[serde(rename = "toolType")]
+    pub tool_type: String,
+    pub count: u64,
+    #[serde(rename = "totalInput")]
+    pub total_input: u64,
+    #[serde(rename = "totalOutput")]
+    pub total_output: u64,
+    #[serde(rename = "totalSaved")]
+    pub total_saved: u64,
+    #[serde(rename = "avgSavingsPct")]
+    pub avg_savings_pct: f64,
+}
+
+#[derive(Serialize)]
 pub struct SavingsData {
     pub summary: SavingsSummary,
     pub daily: Vec<SavingsTimeBucket>,
     #[serde(rename = "topCommands")]
     pub top_commands: Vec<CommandSavings>,
+    #[serde(rename = "toolBreakdown")]
+    pub tool_breakdown: Vec<ToolTypeSavings>,
 }
 
 #[tauri::command]
@@ -391,6 +409,7 @@ pub fn get_savings_data(
             },
             daily: vec![],
             top_commands: vec![],
+            tool_breakdown: vec![],
         });
     }
 
@@ -435,6 +454,30 @@ pub fn get_savings_data(
     top_commands.sort_by(|a, b| b.total_saved.cmp(&a.total_saved));
     top_commands.truncate(20);
 
+    // Aggregate by tool type
+    let mut tool_map: HashMap<String, (u64, u64, u64, f64)> = HashMap::new();
+    for r in &records {
+        let entry = tool_map.entry(r.tool_type.clone()).or_insert((0, 0, 0, 0.0));
+        entry.0 += 1;
+        entry.1 += r.input_tokens;
+        entry.2 += r.output_tokens;
+        entry.3 += r.savings_pct;
+    }
+    let mut tool_breakdown: Vec<ToolTypeSavings> = tool_map
+        .into_iter()
+        .map(|(tool_type, (count, input, output, pct_sum))| {
+            ToolTypeSavings {
+                tool_type,
+                count,
+                total_input: input,
+                total_output: output,
+                total_saved: input.saturating_sub(output),
+                avg_savings_pct: if count > 0 { pct_sum / count as f64 } else { 0.0 },
+            }
+        })
+        .collect();
+    tool_breakdown.sort_by(|a, b| b.total_saved.cmp(&a.total_saved));
+
     Ok(SavingsData {
         summary: SavingsSummary {
             total_commands,
@@ -445,6 +488,7 @@ pub fn get_savings_data(
         },
         daily,
         top_commands,
+        tool_breakdown,
     })
 }
 
@@ -556,6 +600,17 @@ pub struct DiscoverOpportunity {
 }
 
 #[derive(Serialize)]
+pub struct ToolTypeBreakdown {
+    #[serde(rename = "toolType")]
+    pub tool_type: String,
+    pub count: u64,
+    #[serde(rename = "estimatedTokens")]
+    pub estimated_tokens: u64,
+    #[serde(rename = "pctOfTotal")]
+    pub pct_of_total: f64,
+}
+
+#[derive(Serialize)]
 pub struct DiscoverResult {
     #[serde(rename = "sessionsScanned")]
     pub sessions_scanned: u64,
@@ -564,6 +619,8 @@ pub struct DiscoverResult {
     pub opportunities: Vec<DiscoverOpportunity>,
     #[serde(rename = "totalPotentialSavings")]
     pub total_potential_savings: u64,
+    #[serde(rename = "toolBreakdown")]
+    pub tool_breakdown: Vec<ToolTypeBreakdown>,
 }
 
 #[tauri::command]
@@ -575,6 +632,7 @@ pub fn discover_opportunities(project_path: Option<String>) -> Result<DiscoverRe
             total_commands: 0,
             opportunities: vec![],
             total_potential_savings: 0,
+            tool_breakdown: vec![],
         });
     }
 
@@ -639,10 +697,15 @@ pub fn discover_opportunities(project_path: Option<String>) -> Result<DiscoverRe
     let mut opportunities: Vec<DiscoverOpportunity> = Vec::new();
 
     for (cmd, count) in &command_counts {
-        let has_filter = crate::filter::find_filter(cmd).is_some();
+        let is_read = cmd.starts_with("Read ");
+        let is_grep = cmd.starts_with("Grep ");
+        let has_filter = if is_read || is_grep {
+            true // Read/Grep always have optimization (input param capping)
+        } else {
+            crate::filter::find_filter(cmd).is_some()
+        };
         let category = categorize_command(cmd);
 
-        // Estimate savings based on average output size and typical compression
         let avg_output = command_output_sizes
             .get(cmd)
             .map(|sizes| {
@@ -654,8 +717,16 @@ pub fn discover_opportunities(project_path: Option<String>) -> Result<DiscoverRe
             })
             .unwrap_or(500);
 
-        // Assume ~70% savings for filterable commands, ~20% for ANSI-only stripping
-        let savings_rate = if has_filter { 0.70 } else { 0.20 };
+        // Estimated savings rate by tool type
+        let savings_rate = if is_read {
+            0.50 // Read: ~50% savings from limit capping on large files
+        } else if is_grep {
+            0.55 // Grep: ~55% savings from head_limit reduction
+        } else if has_filter {
+            0.70 // Bash with filter: ~70% output compression
+        } else {
+            0.20 // Bash without filter: ~20% from ANSI/whitespace/dedup
+        };
         let estimated_savings = (avg_output as f64 * savings_rate / 4.0).ceil() as u64 * count;
 
         opportunities.push(DiscoverOpportunity {
@@ -671,11 +742,50 @@ pub fn discover_opportunities(project_path: Option<String>) -> Result<DiscoverRe
 
     let total_potential_savings: u64 = opportunities.iter().map(|o| o.estimated_savings_tokens).sum();
 
+    // Build tool-type breakdown
+    let mut tool_counts: HashMap<String, (u64, u64)> = HashMap::new(); // (count, tokens)
+    for (cmd, count) in &command_counts {
+        let tool_type = if cmd.starts_with("Read ") {
+            "Read"
+        } else if cmd.starts_with("Grep ") {
+            "Grep"
+        } else {
+            "Bash"
+        };
+
+        let avg_output = command_output_sizes
+            .get(cmd)
+            .map(|sizes| {
+                if sizes.is_empty() { 500 } else { sizes.iter().sum::<u64>() / sizes.len() as u64 }
+            })
+            .unwrap_or(500);
+        let tokens = (avg_output as f64 / 4.0).ceil() as u64 * count;
+
+        let entry = tool_counts.entry(tool_type.to_string()).or_insert((0, 0));
+        entry.0 += count;
+        entry.1 += tokens;
+    }
+
+    let total_tokens: u64 = tool_counts.values().map(|(_, t)| t).sum();
+    let mut tool_breakdown: Vec<ToolTypeBreakdown> = tool_counts
+        .into_iter()
+        .map(|(tool_type, (count, estimated_tokens))| {
+            let pct_of_total = if total_tokens > 0 {
+                (estimated_tokens as f64 / total_tokens as f64) * 100.0
+            } else {
+                0.0
+            };
+            ToolTypeBreakdown { tool_type, count, estimated_tokens, pct_of_total }
+        })
+        .collect();
+    tool_breakdown.sort_by(|a, b| b.estimated_tokens.cmp(&a.estimated_tokens));
+
     Ok(DiscoverResult {
         sessions_scanned,
         total_commands,
         opportunities,
         total_potential_savings,
+        tool_breakdown,
     })
 }
 
@@ -734,21 +844,38 @@ fn scan_session_for_commands(
             }
 
             let tool_name = block.get("name").and_then(|n| n.as_str()).unwrap_or("");
-            if tool_name != "Bash" {
-                continue;
-            }
+            let input = block.get("input");
 
-            let command = block
-                .get("input")
-                .and_then(|i| i.get("command"))
-                .and_then(|c| c.as_str())
-                .unwrap_or("");
+            let normalized = match tool_name {
+                "Bash" => {
+                    let command = input
+                        .and_then(|i| i.get("command"))
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("");
+                    if command.is_empty() { continue; }
+                    normalize_for_discover(command)
+                }
+                "Read" => {
+                    let file_path = input
+                        .and_then(|i| i.get("file_path"))
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("");
+                    let ext = std::path::Path::new(file_path)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("unknown");
+                    format!("Read .{ext}")
+                }
+                "Grep" => {
+                    let mode = input
+                        .and_then(|i| i.get("output_mode"))
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("files_with_matches");
+                    format!("Grep {mode}")
+                }
+                _ => continue,
+            };
 
-            if command.is_empty() {
-                continue;
-            }
-
-            let normalized = normalize_for_discover(command);
             *counts.entry(normalized.clone()).or_insert(0) += 1;
 
             // Estimate output size from the result if available (heuristic)
@@ -817,11 +944,12 @@ fn categorize_command(cmd: &str) -> String {
         "cargo" => "Rust".to_string(),
         "npm" | "bun" | "npx" | "vitest" | "jest" => "JavaScript".to_string(),
         "ls" | "tree" | "find" | "cat" | "head" | "tail" => "Files".to_string(),
-        "grep" | "rg" | "ripgrep" => "Search".to_string(),
+        "grep" | "rg" | "ripgrep" | "Grep" => "Search".to_string(),
         "docker" | "kubectl" => "Containers".to_string(),
         "curl" | "wget" => "Network".to_string(),
         "python" | "pip" | "pytest" | "ruff" => "Python".to_string(),
         "go" => "Go".to_string(),
+        "Read" => "File Read".to_string(),
         _ => "Other".to_string(),
     }
 }

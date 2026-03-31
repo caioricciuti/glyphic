@@ -34,6 +34,8 @@ pub struct FilterPipeline {
     unless: Option<Regex>,
     strip_lines: Option<Regex>,
     keep_lines: Option<Regex>,
+    dedup_consecutive: bool,
+    normalize_whitespace: bool,
     truncate_lines_at: Option<usize>,
     head_lines: Option<usize>,
     tail_lines: Option<usize>,
@@ -55,6 +57,8 @@ impl FilterPipeline {
             unless: def.unless.and_then(|p| Regex::new(p).ok()),
             strip_lines: def.strip_lines.and_then(|p| Regex::new(p).ok()),
             keep_lines: def.keep_lines.and_then(|p| Regex::new(p).ok()),
+            dedup_consecutive: true,
+            normalize_whitespace: true,
             truncate_lines_at: def.truncate_lines_at,
             head_lines: def.head_lines,
             tail_lines: def.tail_lines,
@@ -63,7 +67,27 @@ impl FilterPipeline {
         }
     }
 
-    /// Apply the full 8-stage pipeline to the input text.
+    /// Universal default pipeline for commands without a specific filter.
+    /// Strips ANSI, normalizes whitespace, deduplicates, and applies generous limits.
+    pub fn default_pipeline() -> Self {
+        Self {
+            strip_ansi: true,
+            replace: Vec::new(),
+            match_output: None,
+            unless: None,
+            strip_lines: None,
+            keep_lines: None,
+            dedup_consecutive: true,
+            normalize_whitespace: true,
+            truncate_lines_at: Some(300),
+            head_lines: Some(150),
+            tail_lines: Some(20),
+            max_lines: None,
+            on_empty: None,
+        }
+    }
+
+    /// Apply the full pipeline to the input text.
     pub fn apply(&self, input: &str) -> String {
         // Stage 1: Strip ANSI escape codes
         let text = if self.strip_ansi {
@@ -98,11 +122,23 @@ impl FilterPipeline {
         // Stage 4: unless — skip filtering if output contains this pattern (preserve errors)
         if let Some(ref re) = self.unless {
             if re.is_match(&text) {
-                return text;
+                // Still apply ANSI strip + whitespace normalization on error output
+                return if self.normalize_whitespace {
+                    normalize_whitespace(&text)
+                } else {
+                    text
+                };
             }
         }
 
-        // Stage 5: strip_lines / keep_lines
+        // Stage 5: Whitespace normalization (collapse blank line runs, trim trailing)
+        let text = if self.normalize_whitespace {
+            normalize_whitespace(&text)
+        } else {
+            text
+        };
+
+        // Stage 6: strip_lines / keep_lines
         let lines: Vec<&str> = text.lines().collect();
         let lines = if let Some(ref re) = self.keep_lines {
             lines.into_iter().filter(|l| re.is_match(l)).collect()
@@ -112,7 +148,14 @@ impl FilterPipeline {
             lines
         };
 
-        // Stage 6: truncate_lines_at
+        // Stage 7: Deduplicate consecutive identical lines
+        let lines: Vec<&str> = if self.dedup_consecutive {
+            dedup_consecutive(lines)
+        } else {
+            lines
+        };
+
+        // Stage 8: truncate_lines_at
         let lines: Vec<String> = if let Some(max_width) = self.truncate_lines_at {
             lines
                 .into_iter()
@@ -122,11 +165,11 @@ impl FilterPipeline {
             lines.into_iter().map(|s| s.to_string()).collect()
         };
 
-        // Stage 7: head_lines / tail_lines
+        // Stage 9: head_lines / tail_lines
         let total = lines.len();
         let lines = apply_head_tail(&lines, self.head_lines, self.tail_lines, total);
 
-        // Stage 8: max_lines — absolute cap
+        // Stage 10: max_lines — absolute cap
         let lines = if let Some(max) = self.max_lines {
             if lines.len() > max {
                 let mut truncated: Vec<String> = lines.into_iter().take(max).collect();
@@ -139,7 +182,7 @@ impl FilterPipeline {
             lines
         };
 
-        // Stage 9: on_empty fallback
+        // Stage 11: on_empty fallback
         let result = lines.join("\n");
         if result.trim().is_empty() {
             self.on_empty.clone().unwrap_or_default()
@@ -147,6 +190,52 @@ impl FilterPipeline {
             result
         }
     }
+}
+
+/// Collapse runs of 3+ blank lines into a single blank line, trim trailing whitespace per line.
+fn normalize_whitespace(input: &str) -> String {
+    let mut result = Vec::new();
+    let mut blank_count = 0u32;
+
+    for line in input.lines() {
+        let trimmed = line.trim_end();
+        if trimmed.is_empty() {
+            blank_count += 1;
+            if blank_count <= 1 {
+                result.push(String::new());
+            }
+        } else {
+            blank_count = 0;
+            result.push(trimmed.to_string());
+        }
+    }
+
+    result.join("\n")
+}
+
+/// Collapse consecutive identical lines: keeps the first of each run,
+/// drops duplicates, and inserts a static marker for runs of 3+.
+fn dedup_consecutive(lines: Vec<&str>) -> Vec<&str> {
+    if lines.len() < 2 {
+        return lines;
+    }
+
+    let mut result: Vec<&str> = Vec::with_capacity(lines.len());
+    let mut run_count: usize = 1;
+
+    for i in 0..lines.len() {
+        if i + 1 < lines.len() && lines[i] == lines[i + 1] {
+            run_count += 1;
+            continue;
+        }
+        result.push(lines[i]);
+        if run_count > 2 {
+            result.push("  ... (repeated lines omitted)");
+        }
+        run_count = 1;
+    }
+
+    result
 }
 
 /// Strip ANSI escape codes from text.
