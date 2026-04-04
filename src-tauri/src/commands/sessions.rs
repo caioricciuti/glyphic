@@ -194,7 +194,7 @@ pub fn list_sessions(limit: Option<usize>, offset: Option<usize>) -> Result<Sess
             Ok(e) => e,
             Err(_) => continue,
         };
-        if !project_entry.file_type().map_or(false, |ft| ft.is_dir()) {
+        if !project_entry.file_type().is_ok_and(|ft| ft.is_dir()) {
             continue;
         }
         let project_dir = project_entry.path();
@@ -334,7 +334,7 @@ pub fn search_sessions(query: String, max_results: Option<usize>) -> Result<Vec<
         .map_err(|e| format!("{e}"))?;
 
     'outer: for project_entry in project_entries.flatten() {
-        if !project_entry.file_type().map_or(false, |ft| ft.is_dir()) { continue; }
+        if !project_entry.file_type().is_ok_and(|ft| ft.is_dir()) { continue; }
         let project_hash = project_entry.file_name().to_string_lossy().to_string();
         let project_path = paths::project_hash_to_path(&project_hash);
 
@@ -350,7 +350,7 @@ pub fn search_sessions(query: String, max_results: Option<usize>) -> Result<Vec<
             let reader = std::io::BufReader::new(file);
             let session_id = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
 
-            for line in reader.lines().flatten() {
+            for line in reader.lines().map_while(Result::ok) {
                 if line.trim().is_empty() { continue; }
                 let lower = line.to_lowercase();
                 if !lower.contains(&q) { continue; }
@@ -464,7 +464,7 @@ pub fn export_session_markdown(path: String) -> Result<String, String> {
     let mut user_count = 0u32;
     let mut tool_count = 0u32;
 
-    for line in reader.lines().flatten() {
+    for line in reader.lines().map_while(Result::ok) {
         if line.trim().is_empty() { continue; }
         let parsed: serde_json::Value = match serde_json::from_str(&line) { Ok(v) => v, Err(_) => continue };
         let event_type = parsed.get("type").and_then(|t| t.as_str()).unwrap_or("");
@@ -532,7 +532,7 @@ pub fn detect_live_sessions() -> Result<Vec<LiveSession>, String> {
     let mut live = Vec::new();
 
     for project_entry in std::fs::read_dir(&projects_dir).map_err(|e| format!("{e}"))?.flatten() {
-        if !project_entry.file_type().map_or(false, |ft| ft.is_dir()) { continue; }
+        if !project_entry.file_type().is_ok_and(|ft| ft.is_dir()) { continue; }
         let project_hash = project_entry.file_name().to_string_lossy().to_string();
         let project_path = paths::project_hash_to_path(&project_hash);
 

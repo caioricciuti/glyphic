@@ -42,8 +42,8 @@ fn parse_rule_frontmatter(content: &str) -> (Vec<String>, String) {
                 continue;
             }
             if in_paths {
-                if trimmed.starts_with("- ") {
-                    let val = trimmed[2..].trim().trim_matches('"').trim_matches('\'');
+                if let Some(rest) = trimmed.strip_prefix("- ") {
+                    let val = rest.trim().trim_matches('"').trim_matches('\'');
                     paths.push(val.to_string());
                 } else if !trimmed.is_empty() {
                     in_paths = false;

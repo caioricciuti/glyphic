@@ -22,6 +22,7 @@ impl Default for PtyState {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn spawn_terminal(
     id: String,

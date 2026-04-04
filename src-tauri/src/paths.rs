@@ -23,6 +23,7 @@ fn resolve_via_shell(shell: &str, binary: &str) -> Option<String> {
 /// 1. Ask zsh (macOS default shell, sources .zshrc/.zprofile)
 /// 2. Ask sh (POSIX fallback, sources .profile)
 /// 3. Check known installation directories directly
+///
 /// Cached for the lifetime of the process.
 pub fn claude_bin() -> &'static str {
     static BIN: OnceLock<String> = OnceLock::new();

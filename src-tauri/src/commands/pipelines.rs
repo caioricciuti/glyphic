@@ -534,7 +534,7 @@ pub fn topo_sort(nodes: &[PipelineNode], connections: &[PipelineConnection]) -> 
     let mut in_deg: HashMap<String, usize> = HashMap::new();
     for n in nodes { adj.insert(n.id.clone(), vec![]); in_deg.insert(n.id.clone(), 0); }
     for c in connections {
-        adj.get_mut(&c.from_node).map(|v| v.push(c.to_node.clone()));
+        if let Some(v) = adj.get_mut(&c.from_node) { v.push(c.to_node.clone()); }
         *in_deg.entry(c.to_node.clone()).or_insert(0) += 1;
     }
     let mut queue: VecDeque<String> = in_deg.iter().filter(|(_, &d)| d == 0).map(|(id, _)| id.clone()).collect();

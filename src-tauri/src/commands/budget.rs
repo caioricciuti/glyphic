@@ -215,7 +215,7 @@ pub fn get_cost_summary() -> Result<CostSummary, String> {
                 if today_days - entry_days > 30 { continue; }
 
                 let project = entry.get("project").and_then(|p| p.as_str()).unwrap_or("unknown");
-                let name = project.split('/').last().unwrap_or(project);
+                let name = project.split('/').next_back().unwrap_or(project);
                 let entry = project_costs.entry(name.to_string()).or_insert((0.0, 0));
                 entry.0 += 0.05; // rough cost estimate per message
                 entry.1 += 1;
@@ -234,8 +234,8 @@ pub fn get_cost_summary() -> Result<CostSummary, String> {
         last_7_days: last_7,
         daily_limit: budget.daily_limit,
         monthly_limit: budget.monthly_limit,
-        daily_exceeded: budget.daily_limit.map_or(false, |l| today_cost >= l),
-        monthly_exceeded: budget.monthly_limit.map_or(false, |l| month_cost >= l),
+        daily_exceeded: budget.daily_limit.is_some_and(|l| today_cost >= l),
+        monthly_exceeded: budget.monthly_limit.is_some_and(|l| month_cost >= l),
         monthly_projection,
         per_project_month,
         plan_type: budget.plan_type,

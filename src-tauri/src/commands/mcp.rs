@@ -3,7 +3,7 @@ use crate::paths;
 
 /// MCP servers live inside settings.json under the "mcpServers" key,
 /// or in .mcp.json at the project root (local scope, the default for `claude mcp add`).
-
+///
 /// Read .mcp.json from project root. Handles both formats:
 /// - Format A (standard): { "server-name": { config } }
 /// - Format B (legacy):   { "mcpServers": { "server-name": { config } } }
@@ -51,7 +51,7 @@ fn read_desktop_config() -> Result<(serde_json::Value, serde_json::Value), Strin
 fn write_desktop_config(mut full: serde_json::Value, servers: serde_json::Value) -> Result<(), String> {
     let path = paths::claude_desktop_config_path();
     let obj = full.as_object_mut().ok_or("desktop config is not an object")?;
-    if servers.as_object().map_or(true, |s| s.is_empty()) {
+    if servers.as_object().is_none_or(|s| s.is_empty()) {
         obj.remove("mcpServers");
     } else {
         obj.insert("mcpServers".to_string(), servers);

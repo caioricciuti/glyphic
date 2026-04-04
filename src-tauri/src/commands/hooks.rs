@@ -21,7 +21,7 @@ pub fn set_hooks(
     let mut current = settings::read_settings(scope.clone(), project_path.clone())?;
     let obj = current.as_object_mut().ok_or("settings is not an object")?;
 
-    if hooks.as_object().map_or(false, |h| h.is_empty()) {
+    if hooks.as_object().is_some_and(|h| h.is_empty()) {
         obj.remove("hooks");
     } else {
         obj.insert("hooks".to_string(), hooks);

@@ -116,7 +116,7 @@ impl SavingsTracker {
 fn normalize_command(cmd: &str) -> String {
     let trimmed = cmd.trim();
     let parts: Vec<&str> = trimmed.split_whitespace().collect();
-    match parts.first().map(|s| *s) {
+    match parts.first().copied() {
         Some("git" | "cargo" | "npm" | "bun" | "docker" | "npx" | "kubectl" | "go" | "uv" | "pip" | "pip3") => {
             parts.iter().take(2).copied().collect::<Vec<_>>().join(" ")
         }

@@ -26,7 +26,7 @@ pub fn list_projects() -> Result<Vec<ProjectInfo>, String> {
         let entry = entry.map_err(|e| format!("failed to read entry: {e}"))?;
         let file_name = entry.file_name().to_string_lossy().to_string();
 
-        if entry.file_type().map_or(false, |ft| ft.is_dir()) {
+        if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
             let resolved_path = paths::project_hash_to_path(&file_name);
             let memory_dir = paths::memory_dir(&file_name);
             let exists = std::path::Path::new(&resolved_path).is_dir();

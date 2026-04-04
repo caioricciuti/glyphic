@@ -2,7 +2,7 @@ use crate::commands::pipelines::{load_store, save_store, Pipeline};
 use crate::paths;
 use serde::Serialize;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn schedules_dir() -> PathBuf {
     paths::claude_home().join("glyphic-schedules")
@@ -230,7 +230,7 @@ fn shell_quote(s: &str) -> String {
 
 /// Generate a launchd plist XML for the given cron expression.
 /// Supports: minute hour day-of-month month day-of-week (standard 5-field cron).
-fn generate_plist(pipeline_id: &str, cron_expr: &str, script: &PathBuf) -> String {
+fn generate_plist(pipeline_id: &str, cron_expr: &str, script: &Path) -> String {
     let parts: Vec<&str> = cron_expr.split_whitespace().collect();
     let label = format!("com.caio.glyphic.pipeline.{pipeline_id}");
 
@@ -395,11 +395,11 @@ pub fn list_pipeline_logs(pipeline_id: String) -> Result<Vec<ScheduleLog>, Strin
     let mut entries: Vec<_> = fs::read_dir(&dir)
         .map_err(|e| format!("{e}"))?
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |ext| ext == "log"))
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "log"))
         .collect();
 
     // Sort by name descending (newest first, since filenames are timestamps)
-    entries.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+    entries.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
 
     // Return last 20 logs
     for entry in entries.into_iter().take(20) {

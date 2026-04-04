@@ -120,7 +120,7 @@ fn count_lines(path: &Path) -> Result<u64, String> {
     let file =
         std::fs::File::open(path).map_err(|e| format!("failed to open savings log: {e}"))?;
     let reader = std::io::BufReader::new(file);
-    Ok(reader.lines().filter_map(|l| l.ok()).count() as u64)
+    Ok(reader.lines().map_while(Result::ok).count() as u64)
 }
 
 // ── Enable / Disable ────────────────────────────────────────────────────────
@@ -799,14 +799,12 @@ fn scan_session_for_commands(
         Err(_) => return,
     };
     let reader = std::io::BufReader::new(file);
-    let mut lines_read = 0u32;
-    const MAX_LINES: u32 = 2000;
+    const MAX_LINES: usize = 2000;
 
-    for line in reader.lines() {
+    for (lines_read, line) in reader.lines().enumerate() {
         if lines_read >= MAX_LINES {
             break;
         }
-        lines_read += 1;
 
         let line = match line {
             Ok(l) => l,

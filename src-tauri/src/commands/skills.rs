@@ -45,7 +45,7 @@ fn list_definitions(dir: &PathBuf, scope: &str, marker: &str) -> Result<Vec<Skil
 
     for entry in entries {
         let entry = entry.map_err(|e| format!("failed to read entry: {e}"))?;
-        if entry.file_type().map_or(false, |ft| ft.is_dir()) {
+        if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
             let name = entry.file_name().to_string_lossy().to_string();
             let marker_path = entry.path().join(marker);
 
