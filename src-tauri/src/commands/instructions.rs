@@ -39,6 +39,10 @@ pub fn read_instructions(scope: String, project_path: Option<String>) -> Result<
             let pp = project_path.ok_or("project_path required")?;
             std::path::PathBuf::from(&pp).join(".claude").join("CLAUDE.md")
         }
+        "local" => {
+            let pp = project_path.ok_or("project_path required")?;
+            std::path::PathBuf::from(&pp).join("CLAUDE.local.md")
+        }
         _ => return Err(format!("invalid scope: {scope}")),
     };
 
@@ -80,6 +84,10 @@ pub fn write_instructions(scope: String, project_path: Option<String>, content: 
                     .map_err(|e| format!("failed to create dir: {e}"))?;
             }
             p
+        }
+        "local" => {
+            let pp = project_path.ok_or("project_path required")?;
+            std::path::PathBuf::from(&pp).join("CLAUDE.local.md")
         }
         _ => return Err(format!("invalid scope: {scope}")),
     };

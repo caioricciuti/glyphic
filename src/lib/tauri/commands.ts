@@ -189,6 +189,12 @@ export const api = {
     saveFilters: (content: string) =>
       invoke<void>("save_filter_rules", { content }),
   },
+  keybindings: {
+    read: () => invoke<KeybindingEntry[]>("read_keybindings"),
+    write: (bindings: KeybindingEntry[]) =>
+      invoke<void>("write_keybindings", { bindings }),
+    getDefaults: () => invoke<KeybindingEntry[]>("get_default_keybindings"),
+  },
 } as const;
 
 export interface GitStatus {
@@ -301,4 +307,11 @@ export interface LiveSession {
   path: string;
   project_path: string;
   modified_secs_ago: number;
+}
+
+export interface KeybindingEntry {
+  key: string;
+  command: string;
+  description: string;
+  when: string | null;
 }

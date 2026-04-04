@@ -12,7 +12,8 @@
   <a href="#features">Features</a> &bull;
   <a href="#installation">Installation</a> &bull;
   <a href="#development">Development</a> &bull;
-  <a href="#screenshots">Screenshots</a>
+  <a href="#screenshots">Screenshots</a> &bull;
+  <a href="#contributing">Contributing</a>
 </p>
 
 <p align="center">
@@ -140,7 +141,16 @@ Unified template gallery with 30+ pre-built configurations across skills, agents
 ### Analytics
 Token usage and cost tracking per model with plan-aware labels (Max/Pro/API). Daily token trend and hourly activity charts with hover tooltips. Cache efficiency visualization. Cost monitoring widget in sidebar with budget alerts.
 
+### Command Palette
+Press **Cmd+K** (or Ctrl+K) to open a fuzzy-search command palette. Jump to any page, toggle theme, or run actions instantly. Keyboard navigation with arrow keys and Enter. Page shortcuts via Cmd+1-9.
+
+### Keybindings Editor
+Visual editor for `~/.claude/keybindings.json`. View and customize all Claude Code keyboard shortcuts — key combos, commands, conditions. Reset to defaults with one click. Full chord support (e.g. Escape Escape).
+
 ### Other
+- **Command palette** — Cmd+K to fuzzy-search pages and actions
+- **First-run onboarding** — guided setup for new users
+- **CLAUDE.local.md** — personal project instructions (gitignored) via 4th Instructions tab
 - **Light/Dark theme** toggle with persisted preference
 - **Auto-updates** — notified of new versions, one-click update
 - **Apple-signed** macOS builds — no Gatekeeper warnings
@@ -238,6 +248,15 @@ Glyphic reads and writes the same configuration files that Claude Code uses:
 - `.claude/skills/`, `.claude/agents/`, `.claude/rules/` -- custom extensions
 
 No server, no account, no telemetry. Everything runs locally on your machine.
+
+## Contributing
+
+Contributions are welcome! Please read the [Contributing Guide](CONTRIBUTING.md) before submitting a PR.
+
+- [Bug Reports](https://github.com/caioricciuti/glyphic/issues/new?template=bug_report.md)
+- [Feature Requests](https://github.com/caioricciuti/glyphic/issues/new?template=feature_request.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security Policy](SECURITY.md)
 
 ## License
 

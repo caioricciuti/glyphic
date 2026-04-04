@@ -1,8 +1,31 @@
 {
   "name": "glyphic",
   "private": true,
-  "version": "0.13.0",
+  "version": "0.14.0",
   "type": "module",
+  "description": "The desktop app for managing Claude Code — visual editor for settings, hooks, MCP servers, memory, skills, and more",
+  "author": "Caio Ricciuti <caio@caioricciuti.com>",
+  "license": "AGPL-3.0",
+  "homepage": "https://github.com/caioricciuti/glyphic",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/caioricciuti/glyphic.git"
+  },
+  "bugs": {
+    "url": "https://github.com/caioricciuti/glyphic/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "claude",
+    "anthropic",
+    "ai",
+    "desktop",
+    "tauri",
+    "svelte",
+    "config-manager",
+    "developer-tools",
+    "mcp"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",

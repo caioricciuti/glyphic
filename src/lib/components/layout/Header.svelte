@@ -18,6 +18,7 @@
     sessions: "Sessions",
     templates: "Templates",
     "token-savings": "Token Savings",
+    keybindings: "Keybindings",
   };
 
   const PAGE_DESCRIPTIONS: Record<Page, string> = {
@@ -37,6 +38,7 @@
     sessions: "Replay and review past Claude Code sessions",
     templates: "Browse and add pre-built configurations",
     "token-savings": "Optimize token usage with automatic command output filtering",
+    keybindings: "Customize Claude Code keyboard shortcuts",
   };
 
   const currentPage = $derived(getCurrentPage());

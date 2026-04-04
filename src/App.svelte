@@ -2,6 +2,8 @@
   import Sidebar from "$lib/components/layout/Sidebar.svelte";
   import Header from "$lib/components/layout/Header.svelte";
   import UpdateBanner from "$lib/components/layout/UpdateBanner.svelte";
+  import CommandPalette from "$lib/components/shared/CommandPalette.svelte";
+  import OnboardingWelcome from "$lib/components/shared/OnboardingWelcome.svelte";
   import DashboardPage from "$lib/components/dashboard/DashboardPage.svelte";
   import SettingsPage from "$lib/components/settings/SettingsPage.svelte";
   import HooksPage from "$lib/components/hooks/HooksPage.svelte";
@@ -18,10 +20,14 @@
   import TerminalPage from "$lib/components/terminal/TerminalPage.svelte";
   import AnalyticsPage from "$lib/components/analytics/AnalyticsPage.svelte";
   import TokenSavingsPage from "$lib/components/token-savings/TokenSavingsPage.svelte";
+  import KeybindingsPage from "$lib/components/keybindings/KeybindingsPage.svelte";
   import { getCurrentPage } from "$lib/stores/navigation.svelte";
 
   const currentPage = $derived(getCurrentPage());
 </script>
+
+<CommandPalette />
+<OnboardingWelcome />
 
 <div class="flex h-screen w-screen">
   <Sidebar />
@@ -63,6 +69,8 @@
         <AnalyticsPage />
       {:else if currentPage === "token-savings"}
         <TokenSavingsPage />
+      {:else if currentPage === "keybindings"}
+        <KeybindingsPage />
       {/if}
     </div>
   </main>

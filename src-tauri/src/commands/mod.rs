@@ -1,5 +1,6 @@
 pub mod budget;
 pub mod git;
+pub mod keybindings;
 pub mod pipelines;
 pub mod scheduler;
 pub mod maintenance;

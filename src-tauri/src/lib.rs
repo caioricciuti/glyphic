@@ -106,6 +106,10 @@ pub fn run() {
             commands::token_savings::discover_opportunities,
             commands::token_savings::get_filter_rules,
             commands::token_savings::save_filter_rules,
+            // Keybindings
+            commands::keybindings::read_keybindings,
+            commands::keybindings::write_keybindings,
+            commands::keybindings::get_default_keybindings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

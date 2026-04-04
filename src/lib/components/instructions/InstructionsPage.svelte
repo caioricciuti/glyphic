@@ -7,7 +7,7 @@
   import { marked } from "marked";
   import { X, FileText, ExternalLink } from "lucide-svelte";
 
-  let activeScope = $state<"global" | "project" | "project-dot">("global");
+  let activeScope = $state<"global" | "project" | "project-dot" | "local">("global");
   let file = $state<InstructionFile | null>(null);
   let loading = $state(true);
   let saving = $state(false);
@@ -31,6 +31,7 @@
     global: "~/.claude/CLAUDE.md",
     project: "./CLAUDE.md",
     "project-dot": "./.claude/CLAUDE.md",
+    local: "./CLAUDE.local.md",
   };
 
   async function loadInstructions() {
@@ -99,6 +100,7 @@
           { id: "global" as const, label: "Global" },
           { id: "project" as const, label: "Project" },
           { id: "project-dot" as const, label: "Project (.claude/)" },
+          { id: "local" as const, label: "Local (gitignored)" },
         ] as tab}
           <button
             class="px-4 py-1.5 text-sm rounded-md transition-colors
