@@ -4,6 +4,24 @@ All notable changes to Glyphic will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.15.0] - 2026-04-15
+
+### Added
+- **Context Engine** — new sidecar binary `glyphic-ctx` wired into Claude Code hooks (`PreToolUse`, `PostToolUse`, `UserPromptSubmit`) for virtualizing tool outputs, indexing prompts, and injecting retrieved context on every turn
+- **Tool-output virtualization** — oversized `Bash`/`Grep`/`WebFetch`/`Glob` results are stored in a local SQLite database and replaced in-context with a `ref tr_xxxx` pointer + summary; Claude can expand refs on demand via `glyphic-ctx expand <id>`
+- **Hybrid retrieval** — BM25 full-text search via SQLite FTS5 reranked by cosine similarity on BGE-Small-EN-v1.5 embeddings (384-dim, CPU-only, model cached at `~/.glyphic/models/`); "auth failing" surfaces when you later ask about "login broken"
+- **Context Engine page** with Enable/Disable toggle, live stats (tool results stored, prompts indexed, bytes stored), semantic coverage card, reindex button, and list of recent virtualized outputs
+- **Reindex** — backfill embeddings for rows stored before embedding support, in 64-row batches with progress indicator
+- **Clean legacy** — one-click purge of pre-extractor rows (raw JSON envelopes) and rows for tools now on the skip list
+- `glyphic-ctx` CLI subcommands: `hook`, `query`, `reindex`, `expand`, `version`
+- Kill switch — set `GLYPHIC_CTX_DISABLED=1` to disable the engine at the shell level
+
+### Changed
+- `Read` added to the skip-list — file contents live on disk, no value in storing them for retrieval
+- Per-tool `extract_output` — `Bash` merges stdout/stderr, `Read` pulls `file.content`, `Grep`/`Glob` pull `content/output/results`; unknown shapes return empty instead of dumping raw JSON
+- `dedup_key` delete-before-insert for `Read`/`Glob` rows, so repeatedly looking at the same file doesn't pile up duplicate rows
+- Retrieval is session-scoped — the active conversation is excluded from the injected context block so prior sessions (not the current one) are where the signal comes from
+
 ## [0.14.0] - 2026-04-04
 
 ### Added

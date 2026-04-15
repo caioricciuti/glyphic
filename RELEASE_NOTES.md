@@ -1,29 +1,38 @@
-## Glyphic v0.14.0 — Command Palette, Keybindings, Onboarding & Community
+## Glyphic v0.15.0 — Context Engine
 
-### New Features
+Every tool call Claude Code makes eats your context window. Every new session starts from scratch — prior debugging sessions, the bug you found yesterday, the `curl` output from Tuesday, all gone. Glyphic v0.15.0 changes that.
 
-- **Command Palette (Cmd+K)** — Fuzzy-search all pages and actions. Arrow keys to navigate, Enter to select. Also supports Cmd+1-9 for direct page shortcuts.
-- **Keybindings Editor** — Visual table editor for `~/.claude/keybindings.json`. Customize all Claude Code keyboard shortcuts with key combos, commands, and conditions. One-click reset to defaults.
-- **CLAUDE.local.md Support** — New "Local (gitignored)" tab in Instructions for personal project instructions that won't be committed to version control.
-- **First-Run Onboarding** — Guided welcome screen for new users with 5 setup steps covering Settings, Instructions, MCP Servers, Skills, and Terminal.
+### The Context Engine
 
-### Community & Infrastructure
+A new sidecar (`glyphic-ctx`) wired into Claude Code hooks does three things:
 
-- **CI Pipeline** — Automated svelte-check + cargo check + clippy on every PR
-- **Contributing Guide** — Development setup, conventions, and PR workflow
-- **Issue Templates** — Structured bug report and feature request forms
-- **PR Template** — Checklist for pull request submissions
-- **Code of Conduct** — Contributor Covenant v2.1
-- **Security Policy** — Vulnerability disclosure process
-- **Changelog** — Full version history from v0.1.0
+- **Virtualizes large tool outputs.** Oversized `Bash`, `Grep`, `WebFetch`, … results are stored locally in SQLite and replaced in-context with a tiny `ref tr_xxxx` pointer + summary. Claude can expand any ref on demand via `glyphic-ctx expand <id>`. A 50 KB test output becomes ~200 bytes in the prompt.
+- **Retrieves relevant prior results on every prompt.** When you send a message, the engine runs a hybrid search — BM25 full-text recall from SQLite FTS5, reranked by cosine similarity on BGE-Small-EN-v1.5 embeddings (384-dim, runs locally on CPU, no API calls). Past turns and tool outputs semantically close to your prompt get injected as `<glyphic-context>`. "login broken" surfaces a prior "auth failing" result.
+- **Short-circuits expand calls.** `glyphic-ctx expand tr_xxxx` never leaves your machine — served straight from the local store via a `PreToolUse` hook.
+
+All local. Zero network except the one-time ~130 MB embedding model download on first use.
+
+### Context Engine page
+
+New page under the sidebar:
+
+- **Enable / Disable** — installs the sidecar, writes the hook config, toggles the engine.
+- **Semantic coverage card** — % of stored rows that have embeddings. Reindex button backfills any row missing one, in batches.
+- **Clean legacy** — one-click purge of rows stored before the current extractors (raw JSON envelopes) and rows for tools now excluded from indexing.
+- **Recent tool results** — last 30 virtualized outputs with size, line count, and copy-the-expand-command button.
+- Kill switch: `GLYPHIC_CTX_DISABLED=1` in your shell env, no app changes needed.
+
+### Why it matters
+
+Less noise in the context window, more relevant signal from prior work, cross-session memory that actually works — without paying for a cloud vector DB or trusting your code to a third party.
 
 ### Downloads
 
 | Platform | File |
 |----------|------|
-| macOS (Apple Silicon) | `Glyphic_0.14.0_aarch64.dmg` |
-| macOS (Intel) | `Glyphic_0.14.0_x64.dmg` |
+| macOS (Apple Silicon) | `Glyphic_0.15.0_aarch64.dmg` |
+| macOS (Intel) | `Glyphic_0.15.0_x64.dmg` |
 | Windows | `.msi` installer |
 | Linux | `.deb`, `.AppImage`, `.rpm` |
 
-All macOS builds are signed and notarized. The app includes auto-updates — existing users will be notified automatically.
+macOS builds are signed and notarized. Auto-update is wired — existing users will be prompted automatically.
