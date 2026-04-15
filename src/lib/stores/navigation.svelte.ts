@@ -15,6 +15,7 @@ export type Page =
   | "sessions"
   | "pipelines"
   | "token-savings"
+  | "context-engine"
   | "keybindings";
 
 export interface NavItem {
@@ -40,6 +41,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "terminal", label: "Terminal", icon: "terminal" },
   { id: "analytics", label: "Analytics", icon: "analytics" },
   { id: "token-savings", label: "Token Savings", icon: "savings" },
+  { id: "context-engine", label: "Context Engine", icon: "network" },
   { id: "keybindings", label: "Keybindings", icon: "keybindings" },
 ];
 

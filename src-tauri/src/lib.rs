@@ -1,4 +1,5 @@
 mod commands;
+pub mod ctx;
 pub mod filter;
 mod paths;
 mod pty;
@@ -110,6 +111,13 @@ pub fn run() {
             commands::keybindings::read_keybindings,
             commands::keybindings::write_keybindings,
             commands::keybindings::get_default_keybindings,
+            // Context Engine
+            commands::context_engine::ctx_get_status,
+            commands::context_engine::ctx_enable,
+            commands::context_engine::ctx_disable,
+            commands::context_engine::ctx_recent_tool_results,
+            commands::context_engine::ctx_reindex_embeddings,
+            commands::context_engine::ctx_purge_legacy,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

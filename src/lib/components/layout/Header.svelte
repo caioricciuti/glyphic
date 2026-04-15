@@ -18,6 +18,7 @@
     sessions: "Sessions",
     templates: "Templates",
     "token-savings": "Token Savings",
+    "context-engine": "Context Engine",
     keybindings: "Keybindings",
   };
 
@@ -38,6 +39,7 @@
     sessions: "Replay and review past Claude Code sessions",
     templates: "Browse and add pre-built configurations",
     "token-savings": "Optimize token usage with automatic command output filtering",
+    "context-engine": "Structured retrieval and tool-output virtualization for 10x better context",
     keybindings: "Customize Claude Code keyboard shortcuts",
   };
 

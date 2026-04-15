@@ -195,7 +195,50 @@ export const api = {
       invoke<void>("write_keybindings", { bindings }),
     getDefaults: () => invoke<KeybindingEntry[]>("get_default_keybindings"),
   },
+  contextEngine: {
+    status: () => invoke<ContextEngineStatus>("ctx_get_status"),
+    enable: () => invoke<void>("ctx_enable"),
+    disable: () => invoke<void>("ctx_disable"),
+    recentToolResults: (project?: string, limit?: number) =>
+      invoke<RecentToolResult[]>("ctx_recent_tool_results", { project, limit }),
+    reindex: (batch?: number) =>
+      invoke<ReindexReport>("ctx_reindex_embeddings", { batch }),
+    purgeLegacy: () => invoke<PurgeReport>("ctx_purge_legacy"),
+  },
 } as const;
+
+export interface ContextEngineStatus {
+  enabled: boolean;
+  sidecarInstalled: boolean;
+  sidecarVersion: string | null;
+  hookInstalled: boolean;
+  dbPath: string;
+  toolResults: number;
+  turns: number;
+  bytesStored: number;
+  embeddedToolResults: number;
+  embeddedTurns: number;
+  embeddingReady: boolean;
+}
+
+export interface ReindexReport {
+  processed: number;
+  remaining: number;
+}
+
+export interface PurgeReport {
+  deleted: number;
+}
+
+export interface RecentToolResult {
+  id: string;
+  tool: string;
+  ts: number;
+  sizeBytes: number;
+  lineCount: number;
+  project: string;
+  summary: string;
+}
 
 export interface GitStatus {
   branch: string;

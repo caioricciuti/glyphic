@@ -1,6 +1,6 @@
 [package]
 name = "glyphic"
-version = "0.14.0"
+version = "0.15.0"
 edition = "2021"
 default-run = "glyphic"
 
@@ -11,6 +11,10 @@ crate-type = ["lib", "cdylib", "staticlib"]
 [[bin]]
 name = "glyphic-filter"
 path = "src/bin/glyphic_filter.rs"
+
+[[bin]]
+name = "glyphic-ctx"
+path = "src/bin/glyphic_ctx.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -32,3 +36,5 @@ base64 = "0.22"
 strip-ansi-escapes = "0.2"
 regex = "1"
 toml = "0.8"
+rusqlite = { version = "0.31", features = ["bundled"] }
+fastembed = "4"

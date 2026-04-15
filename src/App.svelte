@@ -20,6 +20,7 @@
   import TerminalPage from "$lib/components/terminal/TerminalPage.svelte";
   import AnalyticsPage from "$lib/components/analytics/AnalyticsPage.svelte";
   import TokenSavingsPage from "$lib/components/token-savings/TokenSavingsPage.svelte";
+  import ContextEnginePage from "$lib/components/context-engine/ContextEnginePage.svelte";
   import KeybindingsPage from "$lib/components/keybindings/KeybindingsPage.svelte";
   import { getCurrentPage } from "$lib/stores/navigation.svelte";
 
@@ -69,6 +70,8 @@
         <AnalyticsPage />
       {:else if currentPage === "token-savings"}
         <TokenSavingsPage />
+      {:else if currentPage === "context-engine"}
+        <ContextEnginePage />
       {:else if currentPage === "keybindings"}
         <KeybindingsPage />
       {/if}

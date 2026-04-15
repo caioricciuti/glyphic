@@ -29,6 +29,7 @@
     History,
     Gauge,
     Keyboard,
+    Network,
   } from "lucide-svelte";
   import { getTheme, toggleTheme } from "$lib/stores/theme.svelte";
   import type { CostSummary } from "$lib/tauri/commands";
@@ -65,6 +66,7 @@
     analytics: Activity,
     savings: Gauge,
     keybindings: Keyboard,
+    network: Network,
   };
 
   const currentTheme = $derived(getTheme());

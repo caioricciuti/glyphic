@@ -1,4 +1,5 @@
 pub mod budget;
+pub mod context_engine;
 pub mod git;
 pub mod keybindings;
 pub mod pipelines;
