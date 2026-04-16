@@ -136,6 +136,14 @@ pub fn global_rules_dir() -> PathBuf {
 }
 
 pub fn project_hash_to_path(hash: &str) -> String {
+    // Authoritative source: Claude Code writes the original `cwd` into every
+    // session's `.jsonl`. Reading it there sidesteps the dash-encoding
+    // ambiguity entirely (Windows `C:\` → `C--`, and real `-` in folder
+    // names collide with the separator). See issue #2.
+    if let Some(cwd) = cwd_from_session_file(hash) {
+        return cwd;
+    }
+
     // Naive: replace all `-` with `/`
     let naive = hash.replace('-', "/");
     if Path::new(&naive).is_dir() {
@@ -149,6 +157,30 @@ pub fn project_hash_to_path(hash: &str) -> String {
     }
 
     naive
+}
+
+/// Read the first line of any `.jsonl` session file in the project folder
+/// and extract `cwd`. Returns None if the folder doesn't exist, has no
+/// sessions, or the first line isn't parseable — caller falls back to
+/// folder-name decoding.
+fn cwd_from_session_file(hash: &str) -> Option<String> {
+    let project_dir = projects_dir().join(hash);
+    let entries = std::fs::read_dir(&project_dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else { continue };
+        let Some(first_line) = content.lines().next() else { continue };
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(first_line) else { continue };
+        if let Some(cwd) = json.get("cwd").and_then(|v| v.as_str()) {
+            if !cwd.is_empty() {
+                return Some(cwd.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn resolve_segments(segments: &[&str], idx: usize, current: &str) -> Option<String> {
