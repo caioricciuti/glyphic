@@ -113,7 +113,10 @@ pub struct ReindexReport {
 /// Embed rows currently missing an embedding. Caller loops until
 /// `remaining == 0`; batching this way keeps individual invocations short
 /// so the UI can show progress and the user can cancel at any time.
-#[tauri::command]
+///
+/// `(async)` dispatches to a worker thread so the multi-second fastembed
+/// pass doesn't pin Tauri's main thread and freeze unrelated invokes.
+#[tauri::command(async)]
 pub fn ctx_reindex_embeddings(batch: Option<usize>) -> Result<ReindexReport, String> {
     let batch = batch.unwrap_or(64).clamp(1, 512);
     let db = Db::open().map_err(|e| format!("db open: {e}"))?;
