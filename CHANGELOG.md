@@ -4,6 +4,13 @@ All notable changes to Glyphic will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.16.0] - 2026-04-16
+
+### Fixed
+- **Context Engine — turn refs now expand.** Retrieval surfaced both `tool ref=tr_…` and `turn ref=u_…` IDs but only tool results had an expand path; turn refs fell through `PreToolUse` and hit Bash with a missing binary. Both the hook and the `glyphic-ctx expand` subcommand now look up turns as a fallback, so every ref Claude sees is actually expandable
+- **Context Engine — Reindex no longer freezes the UI.** `ctx_reindex_embeddings` was a sync Tauri command, which pins the main thread; the multi-second fastembed pass blocked every other invoke. Switched to `#[tauri::command(async)]` so embedding runs on a worker thread and the rest of the UI stays responsive
+- **Windows project folders resolved correctly ([#2](https://github.com/caioricciuti/glyphic/issues/2)).** `project_hash_to_path` used to convert every `-` in a Claude Code project folder name to `/`, mangling Windows paths like `C--Development-convivo-invitation` into `C//Development/convivo/invitation`. It now reads the authoritative `cwd` from the first line of any session `.jsonl` and uses that; dash-decoding stays as the fallback for folders without sessions. Reported by @mcbyte-it
+
 ## [0.15.0] - 2026-04-15
 
 ### Added
