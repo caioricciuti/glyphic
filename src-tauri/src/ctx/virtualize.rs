@@ -136,3 +136,22 @@ pub fn render_expand(tr: &ToolResult, range: Option<(usize, usize)>) -> String {
         tool = tr.tool,
     )
 }
+
+/// Render a stored turn (prompt or assistant message) for the `expand` flow.
+pub fn render_turn_expand(t: &super::db::Turn, range: Option<(usize, usize)>) -> String {
+    let lines: Vec<&str> = t.content.lines().collect();
+    let total = lines.len();
+    let (start, end) = match range {
+        Some((s, e)) => (s.min(total), e.min(total)),
+        None => (0, total),
+    };
+    if start >= end {
+        return format!("[glyphic:ref {}] empty range {}:{}", t.id, start, end);
+    }
+    let body: String = lines[start..end].join("\n");
+    format!(
+        "[glyphic:ref {id}] turn:{role} — lines {start}..{end} of {total}\n{body}",
+        id = t.id,
+        role = t.role,
+    )
+}

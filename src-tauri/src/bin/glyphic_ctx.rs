@@ -71,10 +71,17 @@ fn run_expand(args: &[String]) {
     };
     match db.get_tool_result(&id) {
         Ok(Some(tr)) => println!("{}", virtualize::render_expand(&tr, range)),
-        Ok(None) => {
-            eprintln!("glyphic-ctx: ref {id} not found");
-            std::process::exit(1);
-        }
+        Ok(None) => match db.get_turn(&id) {
+            Ok(Some(tu)) => println!("{}", virtualize::render_turn_expand(&tu, range)),
+            Ok(None) => {
+                eprintln!("glyphic-ctx: ref {id} not found");
+                std::process::exit(1);
+            }
+            Err(e) => {
+                eprintln!("glyphic-ctx: db error: {e}");
+                std::process::exit(1);
+            }
+        },
         Err(e) => {
             eprintln!("glyphic-ctx: db error: {e}");
             std::process::exit(1);

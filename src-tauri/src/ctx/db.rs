@@ -321,6 +321,25 @@ impl Db {
         }
     }
 
+    pub fn get_turn(&self, id: &str) -> rusqlite::Result<Option<Turn>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, session, ts, role, content, project FROM turns WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query(params![id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Turn {
+                id: row.get(0)?,
+                session: row.get(1)?,
+                ts: row.get::<_, i64>(2)? as u64,
+                role: row.get(3)?,
+                content: row.get(4)?,
+                project: row.get(5)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// FTS5 search across tool_results + turns, scoped to a project when
     /// provided. When `exclude_session` is set, rows from that session are
     /// filtered out — used so UserPromptSubmit doesn't echo the current

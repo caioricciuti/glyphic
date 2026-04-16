@@ -59,15 +59,21 @@ fn pre_tool_use(db: &Db, v: &Value) -> String {
         .unwrap_or("");
 
     if let Some(ref_id) = parse_expand_cmd(cmd) {
-        if let Ok(Some(tr)) = db.get_tool_result(&ref_id) {
-            let range = parse_range_arg(cmd);
-            let rendered = virtualize::render_expand(&tr, range);
+        let range = parse_range_arg(cmd);
+        let rendered = if let Ok(Some(tr)) = db.get_tool_result(&ref_id) {
+            Some(virtualize::render_expand(&tr, range))
+        } else if let Ok(Some(tu)) = db.get_turn(&ref_id) {
+            Some(virtualize::render_turn_expand(&tu, range))
+        } else {
+            None
+        };
+        if let Some(body) = rendered {
             let resp = json!({
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "deny",
-                    "permissionDecisionReason": format!("glyphic-ctx: expanded inline"),
-                    "additionalContext": rendered,
+                    "permissionDecisionReason": "glyphic-ctx: expanded inline",
+                    "additionalContext": body,
                 }
             });
             return resp.to_string();
