@@ -100,7 +100,7 @@ Glyphic gives you a visual interface to configure, manage, and use [Claude Code]
 Live stats computed from your Claude Code history -- sessions, messages, streaks, activity heatmap, XP levels, and 19 achievements. All data is real, pulled directly from `~/.claude/history.jsonl`.
 
 ### Settings Editor
-Visual editor for `settings.json` at global and project scope. Model selector, effort level, toggle switches, permissions editor (allow/ask/deny rules), and environment variables. Project settings show shared (git-tracked) and local (gitignored) overrides side by side.
+Visual editor for `settings.json` at global and project scope. Model selector, effort level, plan type (Max/Pro/API/Team/Free), toggle switches, permissions editor (allow/ask/deny rules), and environment variables. Project settings show shared (git-tracked) and local (gitignored) overrides side by side. Storage management with disk usage breakdown and one-click cleanup of safe-to-delete directories.
 
 ### Hooks Manager
 Browse all 22 hook events in a sidebar, create hooks with a visual form or one-click templates (Shell Command, HTTP Webhook, Prompt Guard, Log to File). Each hook renders as a collapsible card with type selector, matcher, and configuration fields.
@@ -124,13 +124,13 @@ Contextual rules with path-based filtering. Visual path filter badges, rendered 
 Browse and install plugins from the Claude Code marketplace. See install counts, search across 100+ plugins, one-click install. Installed plugins show version, scope, and install date.
 
 ### Git
-Branch switcher, grouped file changes (modified/added/deleted/untracked with colored icons), conventional commit helper (feat/fix/refactor dropdown), commit timeline with hash copy. Auto-refreshes every 30 seconds.
+Branch switcher, grouped file changes (modified/added/deleted/untracked with colored icons), conventional commit helper (feat/fix/refactor dropdown), push and pull operations, commit timeline with hash copy. Auto-refreshes every 30 seconds.
 
 ### Terminal
 Embedded Claude Code terminal via PTY + xterm.js. Sessions persist when navigating away. Multi-tab support for concurrent sessions across different projects. Full ANSI rendering -- colors, progress bars, everything Claude Code outputs works perfectly.
 
 ### Pipelines
-Visual workflow builder powered by Svelte Flow. Drag-and-drop node canvas with zoom, pan, and minimap. 8 node types: Claude Prompt, Bash Command, GitHub Action, HTTP Request, Transform, Delay, Input, Output. Connect nodes to chain data flow -- use `{{input}}` or `{{NodeName}}` to reference outputs. Async execution with real-time status updates on the canvas. Save, load, and manage multiple pipelines.
+Visual workflow builder powered by Svelte Flow. Drag-and-drop node canvas with zoom, pan, and minimap. 14 node types: Claude Prompt, Bash Command, GitHub Action, HTTP Request, Transform, Delay, Input, Output, Git, Filter, ReadFile, WriteFile, Notification, JSONExtract. Connect nodes to chain data flow -- use `{{input}}` or `{{NodeName}}` to reference outputs. Async execution with real-time status updates on the canvas. Pipeline scheduling with cron expressions and preset schedules, schedule logs and monitoring. Run history with replay. Save, load, and manage multiple pipelines.
 
 ### Session Replay
 Browse and replay past Claude Code sessions step by step. Full-text search across all sessions. Tag sessions (bug-fix, feature, refactor). Export as Markdown. Live session detection with green pulse. Paginated loading for large sessions.
@@ -141,6 +141,12 @@ Unified template gallery with 30+ pre-built configurations across skills, agents
 ### Analytics
 Token usage and cost tracking per model with plan-aware labels (Max/Pro/API). Daily token trend and hourly activity charts with hover tooltips. Cache efficiency visualization. Cost monitoring widget in sidebar with budget alerts.
 
+### Token Savings
+Status dashboard for the token optimizer. Enable/disable optimization, view daily/weekly/monthly savings breakdowns with charts, discover optimization opportunities with actionable suggestions, and manage custom filter rules.
+
+### Context Engine
+Semantic search index for tool results and conversation turns. Enable/disable toggle, embedding coverage stats, one-click reindexing with progress tracking, database size monitoring, purge old entries, and browse recent indexed results.
+
 ### Command Palette
 Press **Cmd+K** (or Ctrl+K) to open a fuzzy-search command palette. Jump to any page, toggle theme, or run actions instantly. Keyboard navigation with arrow keys and Enter. Page shortcuts via Cmd+1-9.
 
@@ -148,7 +154,7 @@ Press **Cmd+K** (or Ctrl+K) to open a fuzzy-search command palette. Jump to any 
 Visual editor for `~/.claude/keybindings.json`. View and customize all Claude Code keyboard shortcuts — key combos, commands, conditions. Reset to defaults with one click. Full chord support (e.g. Escape Escape).
 
 ### Other
-- **Command palette** — Cmd+K to fuzzy-search pages and actions
+- **System tray** — closing the window hides to tray instead of quitting; click the tray icon to restore; on macOS hides from Dock and Cmd+Tab when minimized
 - **First-run onboarding** — guided setup for new users
 - **CLAUDE.local.md** — personal project instructions (gitignored) via 4th Instructions tab
 - **Light/Dark theme** toggle with persisted preference
@@ -208,7 +214,7 @@ bun run tauri build
 glyphic/
 ├── src/                    # Svelte 5 frontend
 │   ├── lib/
-│   │   ├── components/     # 28 Svelte components (12 page modules)
+│   │   ├── components/     # 56 Svelte components (18 page modules)
 │   │   ├── stores/         # Reactive stores (navigation, project context, terminal)
 │   │   ├── tauri/          # Typed Tauri command wrappers
 │   │   ├── types/          # TypeScript interfaces
@@ -216,7 +222,7 @@ glyphic/
 │   └── app.css             # Tailwind v4 + dark theme + markdown styles
 ├── src-tauri/              # Rust backend
 │   └── src/
-│       ├── commands/       # 11 command modules (settings, hooks, git, etc.)
+│       ├── commands/       # 19 command modules (settings, hooks, git, pipelines, etc.)
 │       ├── pty.rs          # PTY manager for embedded terminal
 │       └── paths.rs        # Smart path resolution for project hashes
 └── static/                 # App icons
