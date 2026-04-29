@@ -1,7 +1,7 @@
 {
   "name": "glyphic",
   "private": true,
-  "version": "0.17.0",
+  "version": "0.18.0",
   "type": "module",
   "description": "The desktop app for managing Claude Code — visual editor for settings, hooks, MCP servers, memory, skills, and more",
   "author": "Caio Ricciuti <caio@caioricciuti.com>",
