@@ -104,7 +104,7 @@ pub fn get_disk_usage() -> Result<DiskUsageReport, String> {
         }
     }
 
-    entries.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+    entries.sort_by_key(|e| std::cmp::Reverse(e.size_bytes));
 
     Ok(DiskUsageReport {
         total_bytes: total,

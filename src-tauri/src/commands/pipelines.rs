@@ -368,9 +368,8 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &Has
                 "commit" => {
                     args = vec!["commit".to_string(), "-am".to_string(), message.to_string()];
                 }
-                "checkout" => {
-                    if !branch.is_empty() { args.push(branch.to_string()); }
-                }
+                "checkout"
+                    if !branch.is_empty() => { args.push(branch.to_string()); }
                 "clone" => {
                     if !branch.is_empty() { args.push(branch.to_string()); }
                     args.push(path.clone());

@@ -451,7 +451,7 @@ pub fn get_savings_data(
             },
         })
         .collect();
-    top_commands.sort_by(|a, b| b.total_saved.cmp(&a.total_saved));
+    top_commands.sort_by_key(|c| std::cmp::Reverse(c.total_saved));
     top_commands.truncate(20);
 
     // Aggregate by tool type
@@ -476,7 +476,7 @@ pub fn get_savings_data(
             }
         })
         .collect();
-    tool_breakdown.sort_by(|a, b| b.total_saved.cmp(&a.total_saved));
+    tool_breakdown.sort_by_key(|t| std::cmp::Reverse(t.total_saved));
 
     Ok(SavingsData {
         summary: SavingsSummary {
@@ -738,7 +738,7 @@ pub fn discover_opportunities(project_path: Option<String>) -> Result<DiscoverRe
         });
     }
 
-    opportunities.sort_by(|a, b| b.estimated_savings_tokens.cmp(&a.estimated_savings_tokens));
+    opportunities.sort_by_key(|o| std::cmp::Reverse(o.estimated_savings_tokens));
 
     let total_potential_savings: u64 = opportunities.iter().map(|o| o.estimated_savings_tokens).sum();
 
@@ -778,7 +778,7 @@ pub fn discover_opportunities(project_path: Option<String>) -> Result<DiscoverRe
             ToolTypeBreakdown { tool_type, count, estimated_tokens, pct_of_total }
         })
         .collect();
-    tool_breakdown.sort_by(|a, b| b.estimated_tokens.cmp(&a.estimated_tokens));
+    tool_breakdown.sort_by_key(|t| std::cmp::Reverse(t.estimated_tokens));
 
     Ok(DiscoverResult {
         sessions_scanned,
