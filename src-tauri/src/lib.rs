@@ -4,6 +4,29 @@ pub mod filter;
 mod paths;
 mod pty;
 
+use tauri::{
+    image::Image,
+    menu::{MenuBuilder, MenuItemBuilder},
+    tray::TrayIconBuilder,
+    Manager, WindowEvent,
+};
+
+/// Show the main window and restore Dock/Cmd+Tab presence on macOS.
+fn show_window(window: &tauri::WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    {
+        use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy};
+        unsafe {
+            NSApp().setActivationPolicy_(
+                NSApplicationActivationPolicy::NSApplicationActivationPolicyRegular,
+            );
+            NSApp().activateIgnoringOtherApps_(true);
+        }
+    }
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -11,6 +34,60 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .manage(pty::PtyState::default())
+        .setup(|app| {
+            // Build tray menu
+            let show = MenuItemBuilder::with_id("show", "Show Glyphic").build(app)?;
+            let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+            let menu = MenuBuilder::new(app).item(&show).separator().item(&quit).build()?;
+
+            // Create tray icon
+            let icon = Image::from_path("icons/32x32.png")
+                .or_else(|_| Image::from_bytes(include_bytes!("../icons/32x32.png")))
+                .expect("failed to load tray icon");
+
+            TrayIconBuilder::new()
+                .icon(icon)
+                .menu(&menu)
+                .tooltip("Glyphic")
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            show_window(&window);
+                        }
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click { .. } = event {
+                        if let Some(window) = tray.app_handle().get_webview_window("main") {
+                            show_window(&window);
+                        }
+                    }
+                })
+                .build(app)?;
+
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Hide window instead of closing — keeps app in tray
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let _ = window.hide();
+                api.prevent_close();
+                // Remove from Dock and Cmd+Tab on macOS
+                #[cfg(target_os = "macos")]
+                {
+                    use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy};
+                    unsafe {
+                        NSApp().setActivationPolicy_(
+                            NSApplicationActivationPolicy::NSApplicationActivationPolicyAccessory,
+                        );
+                    }
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             // Settings
             commands::settings::read_settings,
