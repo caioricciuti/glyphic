@@ -148,8 +148,17 @@
       .filter((item) => item.type === "tool_use")
       .map((item) => ({
         name: item.name as string,
-        input: JSON.stringify(item.input ?? {}).slice(0, 200),
+        input: JSON.stringify(item.input ?? {}),
       }));
+  }
+
+  let expandedToolCalls = $state<Set<string>>(new Set());
+
+  function toggleToolCall(key: string) {
+    const next = new Set(expandedToolCalls);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    expandedToolCalls = next;
   }
 
   function toggleExpand(idx: number) {
@@ -167,6 +176,7 @@
     playing = false;
     visibleCount = 0;
     expandedEvents = new Set();
+    expandedToolCalls = new Set();
     if (playInterval) clearInterval(playInterval);
     try {
       const result = await api.sessions.load(session.path, 50, 0);
@@ -522,6 +532,7 @@
         {#each visibleEvents as event, idx}
           {#if event.type === "user"}
             <!-- User message -->
+            {@const userText = getEventText(event)}
             <div class="flex gap-3">
               <div class="w-7 h-7 rounded-full bg-info/10 flex items-center justify-center shrink-0 mt-0.5">
                 <User size={14} class="text-info" />
@@ -529,7 +540,19 @@
               <div class="flex-1 min-w-0">
                 <p class="text-[10px] text-text-muted mb-1">You · {formatTime(event.timestamp)}</p>
                 <div class="bg-info/5 border border-info/20 rounded-lg px-4 py-2">
-                  <p class="text-sm text-text-primary">{getEventText(event)}</p>
+                  {#if userText.length > 300 && !expandedEvents.has(idx)}
+                    <p class="text-sm text-text-primary whitespace-pre-wrap">{userText.slice(0, 300)}…</p>
+                    <button class="text-xs text-accent mt-1" onclick={() => toggleExpand(idx)}>
+                      Show more ({userText.length} chars)
+                    </button>
+                  {:else}
+                    <p class="text-sm text-text-primary whitespace-pre-wrap">{userText}</p>
+                    {#if userText.length > 300}
+                      <button class="text-xs text-accent mt-1" onclick={() => toggleExpand(idx)}>
+                        Show less
+                      </button>
+                    {/if}
+                  {/if}
                 </div>
               </div>
             </div>
@@ -546,12 +569,30 @@
                 <p class="text-[10px] text-text-muted">Claude · {formatTime(event.timestamp)}</p>
 
                 <!-- Tool calls -->
-                {#each toolCalls as call}
+                {#each toolCalls as call, callIdx}
                   {@const ToolIcon = TOOL_ICONS[call.name] ?? Code}
-                  <div class="flex items-center gap-2 px-3 py-1.5 bg-bg-tertiary rounded-md">
-                    <ToolIcon size={12} class="text-warning shrink-0" />
-                    <span class="text-xs font-medium text-warning">{call.name}</span>
-                    <span class="text-[10px] text-text-muted font-mono truncate">{call.input}</span>
+                  {@const tcKey = `${idx}-${callIdx}`}
+                  {@const tcExpanded = expandedToolCalls.has(tcKey)}
+                  <div class="bg-bg-tertiary rounded-md overflow-hidden">
+                    <button
+                      type="button"
+                      class="flex items-center gap-2 px-3 py-1.5 w-full text-left hover:bg-bg-hover transition-colors"
+                      onclick={() => toggleToolCall(tcKey)}
+                    >
+                      <ToolIcon size={12} class="text-warning shrink-0" />
+                      <span class="text-xs font-medium text-warning">{call.name}</span>
+                      {#if !tcExpanded}
+                        <span class="text-[10px] text-text-muted font-mono truncate">{call.input.length > 120 ? call.input.slice(0, 120) + "…" : call.input}</span>
+                      {/if}
+                      {#if call.input.length > 120}
+                        <span class="text-[10px] text-text-muted ml-auto shrink-0">
+                          {tcExpanded ? "▾" : "▸"}
+                        </span>
+                      {/if}
+                    </button>
+                    {#if tcExpanded}
+                      <pre class="px-3 py-2 text-[10px] text-text-secondary font-mono whitespace-pre-wrap break-all border-t border-border/30 max-h-64 overflow-y-auto">{call.input}</pre>
+                    {/if}
                   </div>
                 {/each}
 
