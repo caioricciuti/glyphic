@@ -11,16 +11,16 @@ use tauri::{
     Manager, WindowEvent,
 };
 
-/// Show the main window and restore Dock/Cmd+Tab presence on macOS.
 fn show_window(window: &tauri::WebviewWindow) {
     #[cfg(target_os = "macos")]
     {
-        use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy};
+        #[allow(deprecated)]
         unsafe {
+            use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy};
             NSApp().setActivationPolicy_(
                 NSApplicationActivationPolicy::NSApplicationActivationPolicyRegular,
             );
-            NSApp().activateIgnoringOtherApps_(true);
+            NSApp().activateIgnoringOtherApps_(cocoa::base::YES);
         }
     }
     let _ = window.show();
@@ -79,8 +79,9 @@ pub fn run() {
                 // Remove from Dock and Cmd+Tab on macOS
                 #[cfg(target_os = "macos")]
                 {
-                    use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy};
+                    #[allow(deprecated)]
                     unsafe {
+                        use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy};
                         NSApp().setActivationPolicy_(
                             NSApplicationActivationPolicy::NSApplicationActivationPolicyAccessory,
                         );
