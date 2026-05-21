@@ -13,7 +13,7 @@ export type {
 export { HOOK_EVENTS, HOOK_EVENT_DESCRIPTIONS } from "./hooks";
 export type { HookEvent } from "./hooks";
 
-export type { DailyActivity, StatsCache, Achievement, UserXP } from "./stats";
+export type { DailyActivity, StatsCache } from "./stats";
 export type { MemoryFile, ProjectInfo } from "./memory";
 export type { InstructionFile } from "./instructions";
 export type { SkillInfo } from "./skills";

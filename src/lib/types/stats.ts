@@ -15,20 +15,3 @@ export interface StatsCache {
   hourCounts?: Record<string, number>;
 }
 
-export interface Achievement {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  unlocked: boolean;
-  unlockedAt?: string;
-  category: "config" | "usage" | "streak" | "mastery";
-}
-
-export interface UserXP {
-  level: number;
-  levelName: string;
-  currentXP: number;
-  nextLevelXP: number;
-  totalXP: number;
-}

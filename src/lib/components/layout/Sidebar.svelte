@@ -7,9 +7,6 @@
     navigateTo,
   } from "$lib/stores/navigation.svelte";
   import { api } from "$lib/tauri/commands";
-  import { calculateXP } from "$lib/utils/achievements";
-  import { formatNumber } from "$lib/utils/format";
-  import type { StatsCache, Settings } from "$lib/types";
   import {
     BarChart3,
     Settings as SettingsIcon,
@@ -41,12 +38,7 @@
 
   const currentPage = $derived(getCurrentPage());
 
-  let stats = $state<StatsCache | null>(null);
-  let settings = $state<Settings | null>(null);
   let costSummary = $state<CostSummary | null>(null);
-
-  const xp = $derived(calculateXP(stats, settings));
-  const xpPct = $derived(Math.min((xp.currentXP / xp.nextLevelXP) * 100, 100));
 
   const ICON_MAP: Record<string, typeof BarChart3> = {
     chart: BarChart3,
@@ -73,18 +65,14 @@
 
   onMount(async () => {
     try {
-      const [s, set, cost, ver] = await Promise.all([
-        api.stats.computeLive(),
-        api.settings.read("global"),
+      const [cost, ver] = await Promise.all([
         api.budget.getCostSummary(),
         getVersion(),
       ]);
-      stats = s as StatsCache;
-      settings = set;
       costSummary = cost;
       appVersion = ver;
     } catch {
-      // Silently fail — sidebar XP is non-critical
+      // silent
     }
   });
 </script>
@@ -127,7 +115,7 @@
 
   <!-- Cost Widget -->
   {#if costSummary}
-    <div class="px-4 py-2 border-t border-border">
+    <div class="px-4 py-2 border-t border-border" title="Estimated API-equivalent cost — not actual billing">
       <div class="flex items-center justify-between text-xs mb-1">
         <span class="text-text-muted">Today</span>
         <span
@@ -178,19 +166,6 @@
     </button>
   </div>
 
-  <!-- XP Bar -->
-  <div class="px-4 py-3 border-t border-border">
-    <div class="flex items-center justify-between text-xs text-text-muted mb-1">
-      <span>Level {xp.level} — {xp.levelName}</span>
-      <span>{formatNumber(xp.currentXP)} XP</span>
-    </div>
-    <div class="w-full h-2 bg-bg-tertiary rounded-full overflow-hidden">
-      <div
-        class="h-full bg-accent rounded-full transition-all duration-500"
-        style="width: {xpPct}%"
-      ></div>
-    </div>
-  </div>
 </aside>
 
 <!-- About Dialog -->
