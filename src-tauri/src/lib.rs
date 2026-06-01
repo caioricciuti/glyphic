@@ -103,6 +103,7 @@ pub fn run() {
             // Settings
             commands::settings::read_settings,
             commands::settings::write_settings,
+            commands::settings::get_claude_capabilities,
             // Stats
             commands::stats::get_stats,
             commands::stats::compute_live_stats,

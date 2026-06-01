@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   Settings,
   SettingsScope,
+  ClaudeCapabilities,
   StatsCache,
   ProjectInfo,
   MemoryFile,
@@ -21,6 +22,8 @@ export const api = {
       invoke<Settings>("read_settings", { scope, projectPath }),
     write: (scope: SettingsScope, settings: Settings, projectPath?: string) =>
       invoke<void>("write_settings", { scope, projectPath, settings }),
+    getClaudeCapabilities: () =>
+      invoke<ClaudeCapabilities>("get_claude_capabilities"),
   },
 
   stats: {

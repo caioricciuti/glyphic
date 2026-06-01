@@ -225,6 +225,9 @@ pub fn delete_pipeline_history(pipeline_id: String) -> Result<(), String> {
 
 // Static cancel flag
 static CANCEL_FLAG: AtomicBool = AtomicBool::new(false);
+// Only one pipeline run may be in flight at a time, so the process-global
+// CANCEL_FLAG / INTERACTIVE_SENDER can't be claimed by a concurrent run.
+static RUNNING: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
 pub fn cancel_pipeline_run() -> Result<(), String> {
@@ -239,6 +242,21 @@ fn substitute_vars(text: &str, ctx: Option<&str>, all_outputs: &HashMap<String, 
     }
     for (label, output) in all_outputs {
         result = result.replace(&format!("{{{{{}}}}}", label), output);
+    }
+    result
+}
+
+/// Like `substitute_vars`, but shell-quotes each substituted value so that
+/// untrusted upstream output can't inject shell syntax when the result is run
+/// via `sh -c`. The user-authored command template itself is left intact.
+fn substitute_vars_shell(text: &str, ctx: Option<&str>, all_outputs: &HashMap<String, String>) -> String {
+    let mut result = text.to_string();
+    if let Some(c) = ctx {
+        let q = shell_escape(c);
+        result = result.replace("{{input}}", &q).replace("$INPUT", &q);
+    }
+    for (label, output) in all_outputs {
+        result = result.replace(&format!("{{{{{}}}}}", label), &shell_escape(output));
     }
     result
 }
@@ -260,7 +278,7 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &Has
     match node.node_type.as_str() {
         "bash" | "github" => {
             let raw = node.config.get("command").and_then(|c| c.as_str()).unwrap_or("echo 'no command'");
-            let command = substitute_vars(raw, ctx, all_outputs);
+            let command = substitute_vars_shell(raw, ctx, all_outputs);
             let output = std::process::Command::new("sh").args(["-c", &command])
                 .env("PATH", paths::enriched_path())
                 .output()
@@ -564,6 +582,9 @@ pub fn resume_pipeline_node(output: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> Result<(), String> {
+    if RUNNING.swap(true, Ordering::SeqCst) {
+        return Err("a pipeline run is already in progress".into());
+    }
     CANCEL_FLAG.store(false, Ordering::SeqCst);
 
     let sorted = topo_sort(&pipeline.nodes, &pipeline.connections);
@@ -737,6 +758,8 @@ pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> R
             "type": "completed",
             "message": format!("Completed at {}", chrono_now()),
         }));
+
+        RUNNING.store(false, Ordering::SeqCst);
     });
 
     Ok(())

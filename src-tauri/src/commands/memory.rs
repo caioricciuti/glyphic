@@ -117,7 +117,7 @@ pub fn write_memory_file(
     fs::create_dir_all(&dir)
         .map_err(|e| format!("failed to create memory dir: {e}"))?;
 
-    let path = dir.join(&filename);
+    let path = dir.join(paths::sanitize_component(&filename)?);
 
     let mut output = String::new();
 
@@ -143,7 +143,7 @@ pub fn write_memory_file(
 
 #[tauri::command]
 pub fn delete_memory_file(project_hash: String, filename: String) -> Result<(), String> {
-    let path = paths::memory_dir(&project_hash).join(&filename);
+    let path = paths::memory_dir(&project_hash).join(paths::sanitize_component(&filename)?);
 
     if path.exists() {
         fs::remove_file(&path)

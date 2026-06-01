@@ -1,6 +1,19 @@
-export type EffortLevel = "low" | "medium" | "high";
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 export type DefaultMode = "default" | "plan" | "acceptEdits" | "dontAsk" | "bypassPermissions";
 export type SettingsScope = "global" | "project" | "local" | "mcp-local" | "desktop";
+
+export interface ModelOption {
+  value: string;
+  label: string;
+}
+
+/** Model + effort options sourced live from the installed Claude CLI. */
+export interface ClaudeCapabilities {
+  version: string | null;
+  effortLevels: EffortLevel[];
+  modelAliases: ModelOption[];
+  modelPinned: ModelOption[];
+}
 
 export interface Settings {
   model?: string;

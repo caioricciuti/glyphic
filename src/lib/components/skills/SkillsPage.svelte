@@ -5,7 +5,7 @@
   import ProjectPicker from "$lib/components/shared/ProjectPicker.svelte";
   import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
   import { getSelectedProjectPath } from "$lib/stores/project-context.svelte";
-  import { marked } from "marked";
+  import { renderMarkdown } from "$lib/utils/markdown";
   import {
     Sparkles, Bot, Plus, Search, X, Trash2,
     Zap, Server, Brain, Shield, Wrench, BookOpen,
@@ -303,7 +303,7 @@
         <div class="flex-1 overflow-hidden p-4">
           {#if previewMode}
             <div class="h-full overflow-y-auto md-preview px-4">
-              {@html marked(editContent.replace(/^---[\s\S]*?---\n*/m, "")) as string}
+              {@html renderMarkdown(editContent.replace(/^---[\s\S]*?---\n*/m, ""))}
             </div>
           {:else}
             <textarea
@@ -512,7 +512,7 @@
         <div class="bg-bg-secondary border border-border rounded-lg p-4">
           <h3 class="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Instructions</h3>
           <div class="md-preview text-sm">
-            {@html marked(selectedParsed.body || "_No content_") as string}
+            {@html renderMarkdown(selectedParsed.body || "_No content_")}
           </div>
         </div>
       </div>

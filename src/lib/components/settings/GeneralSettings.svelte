@@ -1,11 +1,33 @@
 <script lang="ts">
-  import type { Settings, EffortLevel } from "$lib/types";
+  import { onMount } from "svelte";
+  import { api } from "$lib/tauri/commands";
+  import type { Settings, EffortLevel, ClaudeCapabilities } from "$lib/types";
 
   interface Props {
     settings: Settings;
   }
 
   let { settings = $bindable() }: Props = $props();
+
+  // Model + effort options are sourced live from the installed Claude CLI
+  // (`claude --help`), so they never drift from what the CLI actually supports.
+  const FALLBACK_EFFORT: EffortLevel[] = ["low", "medium", "high", "xhigh", "max"];
+  let caps = $state<ClaudeCapabilities | null>(null);
+
+  const effortLevels = $derived<EffortLevel[]>(caps?.effortLevels ?? FALLBACK_EFFORT);
+
+  function knownModel(value: string): boolean {
+    if (!caps) return false;
+    return [...caps.modelAliases, ...caps.modelPinned].some((m) => m.value === value);
+  }
+
+  onMount(async () => {
+    try {
+      caps = await api.settings.getClaudeCapabilities();
+    } catch {
+      caps = null;
+    }
+  });
 </script>
 
 <div class="bg-bg-secondary border border-border rounded-lg p-4 space-y-4">
@@ -27,9 +49,21 @@
       }}
     >
       <option value="">Default (system-selected)</option>
-      <option value="claude-opus-4-6">Claude Opus 4.6 (most capable)</option>
-      <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (fast + capable)</option>
-      <option value="claude-haiku-4-5">Claude Haiku 4.5 (fastest)</option>
+      {#if caps}
+        <optgroup label="Always latest">
+          {#each caps.modelAliases as m}
+            <option value={m.value}>{m.label}</option>
+          {/each}
+        </optgroup>
+        <optgroup label="Pinned versions">
+          {#each caps.modelPinned as m}
+            <option value={m.value}>{m.label}</option>
+          {/each}
+        </optgroup>
+      {/if}
+      {#if settings.model && !knownModel(settings.model)}
+        <option value={settings.model}>{settings.model} (current)</option>
+      {/if}
     </select>
   </div>
 
@@ -40,14 +74,14 @@
       <p class="text-xs text-text-muted">Controls reasoning depth</p>
     </div>
     <div class="flex gap-1 bg-bg-tertiary rounded-lg p-1" role="group" aria-label="Effort Level">
-      {#each ["low", "medium", "high"] as level}
+      {#each effortLevels as level}
         <button
           class="px-3 py-1 text-xs rounded-md transition-colors
             {settings.effortLevel === level
               ? 'bg-accent text-white'
               : 'text-text-muted hover:text-text-secondary'}"
           onclick={() => {
-            settings = { ...settings, effortLevel: level as EffortLevel };
+            settings = { ...settings, effortLevel: level };
           }}
         >
           {level}

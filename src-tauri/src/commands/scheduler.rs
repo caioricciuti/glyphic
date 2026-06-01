@@ -61,10 +61,14 @@ fn generate_script(pipeline: &Pipeline) -> String {
         match node.node_type.as_str() {
             "bash" | "github" => {
                 let cmd = node.config.get("command").and_then(|c| c.as_str()).unwrap_or("echo 'no command'");
-                // Simple variable substitution in shell
-                lines.push(format!("CMD={}", shell_quote(cmd)));
-                lines.push("CMD=$(echo \"$CMD\" | sed \"s/{{{{input}}}}/$PREV_OUTPUT/g\")".to_string());
-                lines.push("RESULT=$(eval \"$CMD\" 2>&1)".to_string());
+                // Pass the upstream output as an environment variable (a value,
+                // never code) and run the user command via `bash -c`, so an
+                // {{input}} containing shell metacharacters can't inject.
+                let cmd = cmd.replace("{{input}}", "\"$GLYPHIC_INPUT\"");
+                lines.push(format!(
+                    "RESULT=$(GLYPHIC_INPUT=\"$PREV_OUTPUT\" bash -c {} 2>&1)",
+                    shell_quote(&cmd)
+                ));
                 lines.push("echo \"$RESULT\"".to_string());
                 lines.push("PREV_OUTPUT=\"$RESULT\"".to_string());
                 lines.push(format!("NODE_OUTPUTS[\"{}\"]=\"$RESULT\"", node.label));
@@ -205,10 +209,13 @@ fn generate_script(pipeline: &Pipeline) -> String {
             "jsonextract" => {
                 let path = node.config.get("path").and_then(|p| p.as_str()).unwrap_or("");
                 let fallback = node.config.get("fallback").and_then(|f| f.as_str()).unwrap_or("");
-                // Use python3 for JSON path extraction
+                // Safe JSON-path walk (no eval): the path arrives via an env var
+                // and each dot-segment indexes a dict key, falling back to a list
+                // index. Any error drops to the fallback via `|| echo`.
+                let py = "import sys, json, os\nd = json.load(sys.stdin)\ncur = d\nfor seg in [s for s in os.environ.get('GLYPHIC_JPATH', '').split('.') if s != '']:\n    try:\n        cur = cur[seg]\n    except (TypeError, KeyError):\n        cur = cur[int(seg)]\nprint(cur)";
                 lines.push(format!(
-                    "RESULT=$(echo \"$PREV_OUTPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(eval('d[\\'{}\\']'.replace('.','\\'][\\'')))\" 2>/dev/null || echo {})",
-                    path.replace('\'', ""), shell_quote(fallback)
+                    "RESULT=$(echo \"$PREV_OUTPUT\" | GLYPHIC_JPATH={} python3 -c {} 2>/dev/null || echo {})",
+                    shell_quote(path), shell_quote(py), shell_quote(fallback)
                 ));
                 lines.push("echo \"$RESULT\"".to_string());
                 lines.push("PREV_OUTPUT=\"$RESULT\"".to_string());

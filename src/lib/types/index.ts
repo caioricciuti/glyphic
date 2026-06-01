@@ -2,6 +2,8 @@ export type {
   Settings,
   SettingsScope,
   EffortLevel,
+  ModelOption,
+  ClaudeCapabilities,
   DefaultMode,
   HookEventConfig,
   HookHandler,

@@ -1,6 +1,23 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+/// Reject a user-supplied path component that could escape its intended
+/// directory: path separators, `.`/`..`, empty, or an embedded NUL. Returns the
+/// name unchanged when safe. Call this before joining any untrusted filename or
+/// directory name onto a base path.
+pub fn sanitize_component(name: &str) -> Result<&str, String> {
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains('\0')
+    {
+        return Err(format!("invalid filename: {name:?}"));
+    }
+    Ok(name)
+}
+
 /// Try to resolve a binary via a shell's login environment.
 fn resolve_via_shell(shell: &str, binary: &str) -> Option<String> {
     std::process::Command::new(shell)

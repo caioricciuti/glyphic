@@ -197,10 +197,10 @@
                 if (budgetSettings) budgetSettings = { ...budgetSettings, plan_type: (e.target as HTMLSelectElement).value };
               }}
             >
-              <option value="max">Max Plan ($100/mo — unlimited)</option>
-              <option value="pro">Pro Plan ($20/mo)</option>
+              <option value="max">Max</option>
+              <option value="pro">Pro</option>
               <option value="api">API (pay per token)</option>
-              <option value="team">Team Plan</option>
+              <option value="team">Team</option>
               <option value="free">Free</option>
             </select>
           </div>

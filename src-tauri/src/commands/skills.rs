@@ -88,7 +88,7 @@ pub fn write_skill(
     content: String,
 ) -> Result<(), String> {
     let dir = skills_dir_for_scope(&scope, project_path.as_deref())?;
-    let skill_dir = dir.join(&name);
+    let skill_dir = dir.join(crate::paths::sanitize_component(&name)?);
     fs::create_dir_all(&skill_dir)
         .map_err(|e| format!("failed to create skill dir: {e}"))?;
 
@@ -104,7 +104,7 @@ pub fn write_agent(
     content: String,
 ) -> Result<(), String> {
     let dir = agents_dir_for_scope(&scope, project_path.as_deref())?;
-    let agent_dir = dir.join(&name);
+    let agent_dir = dir.join(crate::paths::sanitize_component(&name)?);
     fs::create_dir_all(&agent_dir)
         .map_err(|e| format!("failed to create agent dir: {e}"))?;
 
@@ -119,7 +119,7 @@ pub fn delete_skill(
     name: String,
 ) -> Result<(), String> {
     let dir = skills_dir_for_scope(&scope, project_path.as_deref())?;
-    let skill_dir = dir.join(&name);
+    let skill_dir = dir.join(crate::paths::sanitize_component(&name)?);
     if skill_dir.exists() {
         fs::remove_dir_all(&skill_dir)
             .map_err(|e| format!("failed to delete skill: {e}"))?;
@@ -134,7 +134,7 @@ pub fn delete_agent(
     name: String,
 ) -> Result<(), String> {
     let dir = agents_dir_for_scope(&scope, project_path.as_deref())?;
-    let agent_dir = dir.join(&name);
+    let agent_dir = dir.join(crate::paths::sanitize_component(&name)?);
     if agent_dir.exists() {
         fs::remove_dir_all(&agent_dir)
             .map_err(|e| format!("failed to delete agent: {e}"))?;

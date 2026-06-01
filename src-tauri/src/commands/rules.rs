@@ -117,7 +117,7 @@ pub fn write_rule(
     fs::create_dir_all(&dir)
         .map_err(|e| format!("failed to create rules dir: {e}"))?;
 
-    let path = dir.join(&filename);
+    let path = dir.join(crate::paths::sanitize_component(&filename)?);
 
     let mut output = String::new();
 
@@ -142,7 +142,7 @@ pub fn delete_rule(
     filename: String,
 ) -> Result<(), String> {
     let dir = rules_dir_for_scope(&scope, project_path.as_deref())?;
-    let path = dir.join(&filename);
+    let path = dir.join(crate::paths::sanitize_component(&filename)?);
 
     if path.exists() {
         fs::remove_file(&path)

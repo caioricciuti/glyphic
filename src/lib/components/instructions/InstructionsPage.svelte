@@ -4,7 +4,7 @@
   import type { InstructionFile } from "$lib/types";
   import ProjectPicker from "$lib/components/shared/ProjectPicker.svelte";
   import { getSelectedProjectPath } from "$lib/stores/project-context.svelte";
-  import { marked } from "marked";
+  import { renderMarkdown } from "$lib/utils/markdown";
   import { X, FileText, ExternalLink } from "lucide-svelte";
 
   let activeScope = $state<"global" | "project" | "project-dot" | "local">("global");
@@ -22,7 +22,7 @@
   let refLoading = $state(false);
   let refError = $state<string | null>(null);
 
-  const renderedHtml = $derived(marked(content || "") as string);
+  const renderedHtml = $derived(renderMarkdown(content || ""));
 
   const projectPath = $derived(getSelectedProjectPath());
   const needsProject = $derived(activeScope !== "global");
@@ -228,7 +228,7 @@
         </div>
       {:else}
         <div class="md-preview">
-          {@html marked(refContent) as string}
+          {@html renderMarkdown(refContent)}
         </div>
       {/if}
     </div>

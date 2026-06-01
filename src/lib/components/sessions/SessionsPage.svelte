@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { api } from "$lib/tauri/commands";
   import type { SessionSummary, SessionEvent, SearchResult, SessionTags, LiveSession } from "$lib/tauri/commands";
-  import { marked } from "marked";
+  import { renderMarkdown } from "$lib/utils/markdown";
   import {
     History, Search, Play, Pause, ChevronDown, ChevronRight,
     User, Bot, Terminal, Pencil, Eye, Folder, Code,
@@ -601,14 +601,14 @@
                   <div class="bg-bg-secondary border border-border rounded-lg px-4 py-2">
                     {#if text.length > 300 && !expandedEvents.has(idx)}
                       <div class="text-sm text-text-primary md-preview">
-                        {@html marked(text.slice(0, 300) + "...") as string}
+                        {@html renderMarkdown(text.slice(0, 300) + "...")}
                       </div>
                       <button class="text-xs text-accent mt-1" onclick={() => toggleExpand(idx)}>
                         Show more
                       </button>
                     {:else}
                       <div class="text-sm text-text-primary md-preview">
-                        {@html marked(text) as string}
+                        {@html renderMarkdown(text)}
                       </div>
                       {#if text.length > 300}
                         <button class="text-xs text-accent mt-1" onclick={() => toggleExpand(idx)}>

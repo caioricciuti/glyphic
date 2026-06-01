@@ -3,7 +3,7 @@
   import { api } from "$lib/tauri/commands";
   import type { ProjectInfo, MemoryFile } from "$lib/types";
   import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
-  import { marked } from "marked";
+  import { renderMarkdown } from "$lib/utils/markdown";
   import { X, Plus, Brain, User, MessageSquare, FolderOpen, BookOpen, Search, Trash2 } from "lucide-svelte";
 
   let projects = $state<ProjectInfo[]>([]);
@@ -308,7 +308,7 @@
       <div class="flex-1 overflow-y-auto p-4">
         {#if previewMode}
           <div class="md-preview">
-            {@html marked(editContent || "") as string}
+            {@html renderMarkdown(editContent || "")}
           </div>
         {:else}
           <textarea

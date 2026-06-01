@@ -5,7 +5,7 @@
   import ProjectPicker from "$lib/components/shared/ProjectPicker.svelte";
   import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
   import { getSelectedProjectPath } from "$lib/stores/project-context.svelte";
-  import { marked } from "marked";
+  import { renderMarkdown } from "$lib/utils/markdown";
   import { Shield, Plus, Search, X, Trash2, FileText, Filter, LayoutGrid } from "lucide-svelte";
   import TemplateGallery from "$lib/components/shared/TemplateGallery.svelte";
 
@@ -215,7 +215,7 @@
 
         <div class="flex-1 overflow-hidden p-4">
           {#if previewMode}
-            <div class="h-full overflow-y-auto md-preview px-4">{@html marked(editContent || "") as string}</div>
+            <div class="h-full overflow-y-auto md-preview px-4">{@html renderMarkdown(editContent || "")}</div>
           {:else}
             <textarea class="w-full h-full px-4 py-3 text-sm bg-bg-secondary border border-border rounded-lg text-text-primary font-mono resize-none focus:outline-none focus:border-accent" placeholder="# Rule Title&#10;&#10;- Rule 1&#10;- Rule 2" bind:value={editContent}></textarea>
           {/if}
@@ -263,7 +263,7 @@
         <!-- Content -->
         <div class="bg-bg-secondary border border-border rounded-lg p-6">
           <div class="md-preview">
-            {@html marked(selected.content || "_No content_") as string}
+            {@html renderMarkdown(selected.content || "_No content_")}
           </div>
         </div>
       </div>

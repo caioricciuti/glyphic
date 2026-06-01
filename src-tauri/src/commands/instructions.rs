@@ -98,6 +98,12 @@ pub fn write_instructions(scope: String, project_path: Option<String>, content: 
 
 #[tauri::command]
 pub fn read_referenced_file(base_path: String, reference: String) -> Result<String, String> {
+    // Reject upward traversal so a crafted @import reference can't read files
+    // outside the intended scope (subdirectories and ~ are still allowed).
+    if reference.split(['/', '\\']).any(|c| c == "..") {
+        return Err("reference must not contain '..'".into());
+    }
+
     // Resolve reference relative to the base file's directory
     let base = std::path::PathBuf::from(&base_path);
     let base_dir = base.parent().unwrap_or(&base);

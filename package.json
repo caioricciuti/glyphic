@@ -1,7 +1,7 @@
 {
   "name": "glyphic",
   "private": true,
-  "version": "0.19.1",
+  "version": "0.20.0",
   "type": "module",
   "description": "The desktop app for managing Claude Code — visual editor for settings, hooks, MCP servers, memory, skills, and more",
   "author": "Caio Ricciuti <me@caioricciuti.com>",
@@ -48,6 +48,7 @@
     "@xterm/xterm": "^6.0.0",
     "@xyflow/svelte": "^1.5.2",
     "codemirror": "^6.0.2",
+    "dompurify": "^3.4.7",
     "lucide-svelte": "^1.0.1",
     "marked": "^17.0.5"
   },
