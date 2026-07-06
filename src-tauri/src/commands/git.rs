@@ -154,25 +154,76 @@ pub fn git_init(path: String) -> Result<String, String> {
     run_git(&path, &["init"])
 }
 
+/// Quote a value for safe embedding in a single-quoted POSIX shell string.
+pub fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+/// Open a new terminal window and run `script` in it. Cross-platform: Terminal.app
+/// on macOS, the first available emulator on Linux, cmd.exe on Windows.
+pub fn spawn_terminal_with_command(script: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let escaped_script = script.replace('\\', "\\\\").replace('"', "\\\"");
+        return Command::new("osascript")
+            .args([
+                "-e",
+                &format!(
+                    "tell application \"Terminal\"
+                        activate
+                        do script \"{}\"
+                    end tell",
+                    escaped_script
+                ),
+            ])
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("failed to open terminal: {e}"));
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let full = format!("{script}; exec \"$SHELL\"");
+        let terminals: &[(&str, &str)] = &[
+            ("gnome-terminal", "--"),
+            ("konsole", "-e"),
+            ("xfce4-terminal", "-e"),
+            ("x-terminal-emulator", "-e"),
+            ("xterm", "-e"),
+        ];
+        for (bin, flag) in terminals {
+            let found = Command::new("which")
+                .arg(bin)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            if !found {
+                continue;
+            }
+            if Command::new(bin).args([*flag, "sh", "-c", full.as_str()]).spawn().is_ok() {
+                return Ok(());
+            }
+        }
+        return Err("no supported terminal emulator found (tried gnome-terminal, konsole, xfce4-terminal, x-terminal-emulator, xterm)".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        return Command::new("cmd")
+            .args(["/C", "start", "cmd", "/K", script])
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("failed to open terminal: {e}"));
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        Err("unsupported platform".to_string())
+    }
+}
+
 #[tauri::command]
 pub fn open_in_terminal(path: String) -> Result<(), String> {
-    // macOS: open Terminal.app with a script that cd's to the path and runs claude
-    // Escape single quotes in path to prevent injection
-    let safe_path = path.replace('\'', "'\\''");
-    let script = format!("cd '{}' && claude", safe_path);
-    let escaped_script = script.replace('\\', "\\\\").replace('"', "\\\"");
-    Command::new("osascript")
-        .args([
-            "-e",
-            &format!(
-                "tell application \"Terminal\"
-                    activate
-                    do script \"{}\"
-                end tell",
-                escaped_script
-            ),
-        ])
-        .spawn()
-        .map_err(|e| format!("failed to open terminal: {e}"))?;
-    Ok(())
+    let script = format!("cd {} && claude", shell_quote(&path));
+    spawn_terminal_with_command(&script)
 }

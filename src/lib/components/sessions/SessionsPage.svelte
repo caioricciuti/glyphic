@@ -3,11 +3,12 @@
   import { api } from "$lib/tauri/commands";
   import type { SessionSummary, SessionEvent, SearchResult, SessionTags, LiveSession } from "$lib/tauri/commands";
   import { renderMarkdown } from "$lib/utils/markdown";
+  import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
   import {
     History, Search, Play, Pause, ChevronDown, ChevronRight,
     User, Bot, Terminal, Pencil, Eye, Folder, Code,
     Wrench, Globe, Zap, Brain, Clock, MessageSquare, Hash,
-    Tag, FileDown, Radio, Check, X,
+    Tag, FileDown, Radio, Check, X, Trash2,
   } from "lucide-svelte";
 
   let sessions = $state<SessionSummary[]>([]);
@@ -39,6 +40,17 @@
 
   // Live sessions
   let liveSessions = $state<LiveSession[]>([]);
+
+  // Resume / delete
+  let resuming = $state(false);
+  let resumeError = $state<string | null>(null);
+  let confirmingDelete = $state(false);
+  let deleting = $state(false);
+
+  // Bulk selection / delete
+  let selectedIds = $state<Set<string>>(new Set());
+  let confirmingBulkDelete = $state(false);
+  let bulkDeleting = $state(false);
 
   // Replay controls
   let playing = $state(false);
@@ -266,6 +278,68 @@
     } catch (e) { console.error("Export failed:", e); }
   }
 
+  async function resumeSession() {
+    if (!selectedSession || resuming) return;
+    resuming = true;
+    resumeError = null;
+    try {
+      await api.sessions.resume(selectedSession.project_path, selectedSession.id);
+    } catch (e) {
+      resumeError = String(e);
+      setTimeout(() => (resumeError = null), 4000);
+    } finally {
+      resuming = false;
+    }
+  }
+
+  async function deleteSession() {
+    if (!selectedSession || deleting) return;
+    const toDelete = selectedSession;
+    deleting = true;
+    try {
+      await api.sessions.delete(toDelete.path);
+      sessions = sessions.filter((s) => s.id !== toDelete.id);
+      totalCount = Math.max(0, totalCount - 1);
+      selectedSession = null;
+      events = [];
+    } catch (e) {
+      console.error("Delete failed:", e);
+    } finally {
+      deleting = false;
+      confirmingDelete = false;
+    }
+  }
+
+  function toggleSelect(id: string) {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    selectedIds = next;
+  }
+
+  function clearSelection() {
+    selectedIds = new Set();
+  }
+
+  async function deleteSelectedSessions() {
+    if (selectedIds.size === 0 || bulkDeleting) return;
+    bulkDeleting = true;
+    const toDelete = sessions.filter((s) => selectedIds.has(s.id));
+    const results = await Promise.allSettled(toDelete.map((s) => api.sessions.delete(s.path)));
+    const deletedIds = new Set(
+      toDelete.filter((_, i) => results[i].status === "fulfilled").map((s) => s.id),
+    );
+    sessions = sessions.filter((s) => !deletedIds.has(s.id));
+    totalCount = Math.max(0, totalCount - deletedIds.size);
+    if (selectedSession && deletedIds.has(selectedSession.id)) {
+      selectedSession = null;
+      events = [];
+    }
+    selectedIds = new Set([...selectedIds].filter((id) => !deletedIds.has(id)));
+    bulkDeleting = false;
+    confirmingBulkDelete = false;
+  }
+
   async function detectLive() {
     try { liveSessions = await api.sessions.detectLive(); } catch { /* silent */ }
   }
@@ -312,6 +386,24 @@
   });
 </script>
 
+<ConfirmDialog
+  open={confirmingDelete}
+  title="Delete Session"
+  message="This session and its transcript will be permanently deleted."
+  confirmLabel={deleting ? "Deleting..." : "Delete"}
+  onconfirm={deleteSession}
+  oncancel={() => (confirmingDelete = false)}
+/>
+
+<ConfirmDialog
+  open={confirmingBulkDelete}
+  title="Delete Sessions"
+  message="{selectedIds.size} session{selectedIds.size === 1 ? '' : 's'} and their transcripts will be permanently deleted."
+  confirmLabel={bulkDeleting ? "Deleting..." : "Delete"}
+  onconfirm={deleteSelectedSessions}
+  oncancel={() => (confirmingBulkDelete = false)}
+/>
+
 <div class="flex h-full">
   <!-- Session list sidebar -->
   <div class="w-80 shrink-0 border-r border-border flex flex-col bg-bg-secondary">
@@ -326,6 +418,22 @@
         {/if}
       </div>
     </div>
+
+    {#if selectedIds.size > 0}
+      <div class="flex items-center justify-between px-3 py-2 border-b border-border bg-accent/5">
+        <span class="text-xs text-text-secondary">{selectedIds.size} selected</span>
+        <div class="flex items-center gap-3">
+          <button class="text-xs text-text-muted hover:text-text-secondary" onclick={clearSelection}>Clear</button>
+          <button
+            class="flex items-center gap-1 px-2 py-1 text-xs bg-danger hover:bg-danger/80 text-white rounded-md transition-colors"
+            onclick={() => (confirmingBulkDelete = true)}
+          >
+            <Trash2 size={11} />
+            Delete
+          </button>
+        </div>
+      </div>
+    {/if}
 
     <div class="flex-1 overflow-y-auto">
       <!-- Live sessions -->
@@ -372,41 +480,55 @@
       {:else}
         {#each filteredSessions as session}
           {@const tags = sessionTags.tags[session.id] ?? []}
-          <button
-            class="w-full text-left px-3 py-3 border-b border-border/50 transition-colors
+          {@const checked = selectedIds.has(session.id)}
+          <div
+            class="flex items-stretch border-b border-border/50 transition-colors
               {selectedSession?.id === session.id ? 'bg-accent/10' : 'hover:bg-bg-hover'}"
-            onclick={() => selectSession(session)}
           >
-            <div class="flex items-center gap-2 mb-1">
-              {#if isLive(session.path)}
-                <span class="w-2 h-2 rounded-full bg-success animate-pulse shrink-0"></span>
-              {:else}
-                <History size={12} class="text-accent shrink-0" />
-              {/if}
-              <span class="text-xs font-medium text-text-primary truncate">
-                {session.project_path.split("/").pop()}
-              </span>
-              <span class="text-[10px] text-text-muted ml-auto shrink-0">
-                {formatTime(session.first_timestamp)}
-              </span>
-            </div>
-            {#if session.first_message}
-              <p class="text-xs text-text-secondary truncate ml-[20px]">"{session.first_message}"</p>
-            {/if}
-            {#if tags.length > 0}
-              <div class="flex gap-1 mt-1 ml-[20px]">
-                {#each tags as tag}
-                  <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-accent/10 text-accent">{tag}</span>
-                {/each}
+            <label class="flex items-center pl-3 pr-1 shrink-0 cursor-pointer">
+              <input
+                type="checkbox"
+                class="accent-accent"
+                {checked}
+                onchange={() => toggleSelect(session.id)}
+                aria-label="Select session"
+              />
+            </label>
+            <button
+              class="flex-1 min-w-0 text-left py-3 pr-3"
+              onclick={() => selectSession(session)}
+            >
+              <div class="flex items-center gap-2 mb-1">
+                {#if isLive(session.path)}
+                  <span class="w-2 h-2 rounded-full bg-success animate-pulse shrink-0"></span>
+                {:else}
+                  <History size={12} class="text-accent shrink-0" />
+                {/if}
+                <span class="text-xs font-medium text-text-primary truncate">
+                  {session.project_path.split("/").pop()}
+                </span>
+                <span class="text-[10px] text-text-muted ml-auto shrink-0">
+                  {formatTime(session.first_timestamp)}
+                </span>
               </div>
-            {/if}
-            <div class="flex gap-3 mt-1 ml-[20px] text-[10px] text-text-muted">
-              <span>{session.user_messages} msgs</span>
-              <span>{session.tool_calls} tools</span>
-              <span>{session.entry_count} events</span>
-              <span>{formatDuration(session.first_timestamp, session.last_timestamp)}</span>
-            </div>
-          </button>
+              {#if session.first_message}
+                <p class="text-xs text-text-secondary truncate ml-[20px]">"{session.first_message}"</p>
+              {/if}
+              {#if tags.length > 0}
+                <div class="flex gap-1 mt-1 ml-[20px]">
+                  {#each tags as tag}
+                    <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-accent/10 text-accent">{tag}</span>
+                  {/each}
+                </div>
+              {/if}
+              <div class="flex gap-3 mt-1 ml-[20px] text-[10px] text-text-muted">
+                <span>{session.user_messages} msgs</span>
+                <span>{session.tool_calls} tools</span>
+                <span>{session.entry_count} events</span>
+                <span>{formatDuration(session.first_timestamp, session.last_timestamp)}</span>
+              </div>
+            </button>
+          </div>
         {/each}
 
         <!-- Load more -->
@@ -448,6 +570,9 @@
           {#if selectedSession.first_message}
             <p class="text-xs text-text-muted mt-0.5">"{selectedSession.first_message}"</p>
           {/if}
+          {#if resumeError}
+            <p class="text-xs text-danger mt-0.5">{resumeError}</p>
+          {/if}
         </div>
         <div class="flex items-center gap-3">
           <div class="flex items-center gap-3 text-xs text-text-muted">
@@ -476,6 +601,25 @@
           >
             <Tag size={12} />
             Tag
+          </button>
+          <!-- Resume -->
+          <button
+            class="flex items-center gap-1 px-2 py-1.5 text-xs bg-bg-tertiary border border-border rounded-md text-text-secondary hover:border-accent/30 transition-colors disabled:opacity-50"
+            onclick={resumeSession}
+            disabled={resuming}
+            title="Resume this session in a terminal"
+          >
+            <Terminal size={12} />
+            {resuming ? "Resuming..." : "Resume"}
+          </button>
+          <!-- Delete -->
+          <button
+            class="flex items-center gap-1 px-2 py-1.5 text-xs bg-bg-tertiary border border-border rounded-md text-text-secondary hover:border-danger/50 hover:text-danger transition-colors"
+            onclick={() => (confirmingDelete = true)}
+            title="Delete this session"
+          >
+            <Trash2 size={12} />
+            Delete
           </button>
           {#if !playing}
             <button

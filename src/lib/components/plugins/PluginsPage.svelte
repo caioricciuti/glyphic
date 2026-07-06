@@ -23,10 +23,23 @@
     unique_installs: number;
   }
 
+  interface MarketplaceData {
+    name?: string;
+    plugins?: Array<{ name: string; description?: string; category?: string }>;
+  }
+
+  interface MarketplacePlugin {
+    name: string;
+    description: string;
+    category?: string;
+    marketplace: string;
+  }
+
   let activeTab = $state<"installed" | "marketplace">("installed");
   let installed = $state<InstalledPlugin[]>([]);
   let blocked = $state<BlockedEntry[]>([]);
   let installCounts = $state<InstallCount[]>([]);
+  let marketplacePlugins = $state<MarketplacePlugin[]>([]);
   let loading = $state(true);
   let search = $state("");
   let installing = $state<string | null>(null);
@@ -35,10 +48,21 @@
   // Uninstall
   let uninstallingPlugin = $state<string | null>(null);
 
+  const installCountMap = $derived(new Map(installCounts.map((c) => [c.plugin, c.unique_installs])));
+
   const filteredMarketplace = $derived(
-    installCounts
-      .filter((p) => !search || p.plugin.toLowerCase().includes(search.toLowerCase()))
-      .sort((a, b) => b.unique_installs - a.unique_installs),
+    marketplacePlugins
+      .filter(
+        (p) =>
+          !search ||
+          p.name.toLowerCase().includes(search.toLowerCase()) ||
+          p.description.toLowerCase().includes(search.toLowerCase()),
+      )
+      .sort(
+        (a, b) =>
+          (installCountMap.get(`${b.name}@${b.marketplace}`) ?? 0) -
+          (installCountMap.get(`${a.name}@${a.marketplace}`) ?? 0),
+      ),
   );
 
   const filteredInstalled = $derived(
@@ -57,10 +81,11 @@
   async function loadData() {
     loading = true;
     try {
-      const [inst, block, counts] = await Promise.all([
+      const [inst, block, counts, marketplaces] = await Promise.all([
         api.plugins.getInstalled(),
         api.plugins.getBlocked(),
         api.plugins.getInstallCounts(),
+        api.plugins.getMarketplace(),
       ]);
 
       // Parse installed — plugins is Record<string, InstallEntry[]>
@@ -87,6 +112,17 @@
       // Parse install counts — data is { counts: [...] }
       const countsData = counts as { counts?: InstallCount[] } | InstallCount[];
       installCounts = Array.isArray(countsData) ? countsData : (countsData?.counts ?? []);
+
+      // Flatten each marketplace's plugin list into a single browsable array
+      const marketData = (marketplaces as MarketplaceData[]) ?? [];
+      marketplacePlugins = marketData.flatMap((m) =>
+        (m.plugins ?? []).map((p) => ({
+          name: p.name,
+          description: p.description ?? "",
+          category: p.category,
+          marketplace: m.name ?? "unknown",
+        })),
+      );
     } catch (e) {
       console.error("Failed:", e);
     } finally {
@@ -160,8 +196,8 @@
       </button>
       <button class="px-4 py-1.5 text-sm rounded-md transition-colors {activeTab === 'marketplace' ? 'bg-bg-secondary text-text-primary' : 'text-text-muted'}" onclick={() => { activeTab = "marketplace"; search = ""; }}>
         Marketplace
-        {#if installCounts.length > 0}
-          <span class="ml-1 text-xs text-text-muted">{installCounts.length}</span>
+        {#if marketplacePlugins.length > 0}
+          <span class="ml-1 text-xs text-text-muted">{marketplacePlugins.length}</span>
         {/if}
       </button>
     </div>
@@ -256,8 +292,9 @@
     {#if filteredMarketplace.length > 0}
       <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
         {#each filteredMarketplace as plugin}
-          {@const name = plugin.plugin.split("@")[0]}
-          {@const alreadyInstalled = isInstalled(plugin.plugin)}
+          {@const fullName = `${plugin.name}@${plugin.marketplace}`}
+          {@const alreadyInstalled = isInstalled(fullName)}
+          {@const installs = installCountMap.get(fullName)}
           <div class="bg-bg-secondary border border-border rounded-lg p-4 flex flex-col justify-between group hover:border-accent/30 transition-colors">
             <div>
               <div class="flex items-start justify-between">
@@ -265,13 +302,26 @@
                   <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
                     <Package size={14} class="text-accent" />
                   </div>
-                  <p class="text-sm font-medium text-text-primary">{name}</p>
+                  <div class="min-w-0">
+                    <p class="text-sm font-medium text-text-primary">{plugin.name}</p>
+                    <p class="text-xs text-text-muted">{plugin.marketplace}</p>
+                  </div>
                 </div>
               </div>
-              <p class="text-xs text-text-muted mt-2">
-                <Download size={10} class="inline" />
-                {formatInstalls(plugin.unique_installs)} installs
-              </p>
+              {#if plugin.description}
+                <p class="text-xs text-text-muted mt-2 line-clamp-2">{plugin.description}</p>
+              {/if}
+              <div class="flex items-center gap-2 mt-2">
+                {#if plugin.category}
+                  <span class="px-1.5 py-0.5 rounded bg-bg-tertiary text-text-muted text-xs">{plugin.category}</span>
+                {/if}
+                {#if installs}
+                  <p class="text-xs text-text-muted">
+                    <Download size={10} class="inline" />
+                    {formatInstalls(installs)} installs
+                  </p>
+                {/if}
+              </div>
             </div>
             <div class="mt-3">
               {#if alreadyInstalled}
@@ -279,10 +329,10 @@
               {:else}
                 <button
                   class="w-full py-1.5 text-xs bg-accent hover:bg-accent-hover text-white rounded-md transition-colors disabled:opacity-50"
-                  onclick={() => installPlugin(plugin.plugin)}
-                  disabled={installing === plugin.plugin}
+                  onclick={() => installPlugin(fullName)}
+                  disabled={installing === fullName}
                 >
-                  {installing === plugin.plugin ? "Installing..." : "Install"}
+                  {installing === fullName ? "Installing..." : "Install"}
                 </button>
               {/if}
             </div>
