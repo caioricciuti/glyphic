@@ -31,6 +31,7 @@ pub fn spawn_terminal(
     rows: u16,
     prompt: Option<String>,
     dangerously_skip_permissions: Option<bool>,
+    resume_session_id: Option<String>,
     state: tauri::State<PtyState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
@@ -48,6 +49,10 @@ pub fn spawn_terminal(
     let mut cmd = CommandBuilder::new(crate::paths::claude_bin());
     if dangerously_skip_permissions == Some(true) {
         cmd.arg("--dangerously-skip-permissions");
+    }
+    if let Some(ref id) = resume_session_id {
+        cmd.arg("--resume");
+        cmd.arg(id);
     }
     if let Some(ref p) = prompt {
         cmd.arg(p);

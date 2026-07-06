@@ -57,7 +57,11 @@ const THEME = {
   brightWhite: "#ffffff",
 };
 
-export async function createSession(projectPath: string, projectName: string): Promise<string> {
+export async function createSession(
+  projectPath: string,
+  projectName: string,
+  resumeSessionId?: string,
+): Promise<string> {
   const id = crypto.randomUUID();
 
   // Create terminal
@@ -129,7 +133,13 @@ export async function createSession(projectPath: string, projectName: string): P
   activeSessionId = id;
 
   // Spawn PTY (use default size, will be resized when attached)
-  await invoke("spawn_terminal", { id, path: projectPath, cols: 80, rows: 24 });
+  await invoke("spawn_terminal", {
+    id,
+    path: projectPath,
+    cols: 80,
+    rows: 24,
+    resumeSessionId: resumeSessionId ?? null,
+  });
 
   return id;
 }

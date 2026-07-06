@@ -4,6 +4,8 @@
   import type { SessionSummary, SessionEvent, SearchResult, SessionTags, LiveSession } from "$lib/tauri/commands";
   import { renderMarkdown } from "$lib/utils/markdown";
   import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
+  import { createSession } from "$lib/stores/terminal.svelte";
+  import { navigateTo } from "$lib/stores/navigation.svelte";
   import {
     History, Search, Play, Pause, ChevronDown, ChevronRight,
     User, Bot, Terminal, Pencil, Eye, Folder, Code,
@@ -283,7 +285,9 @@
     resuming = true;
     resumeError = null;
     try {
-      await api.sessions.resume(selectedSession.project_path, selectedSession.id);
+      const projectName = selectedSession.project_path.split("/").filter(Boolean).pop() ?? selectedSession.project_path;
+      await createSession(selectedSession.project_path, projectName, selectedSession.id);
+      navigateTo("terminal");
     } catch (e) {
       resumeError = String(e);
       setTimeout(() => (resumeError = null), 4000);
