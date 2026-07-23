@@ -176,11 +176,17 @@ pub fn project_hash_to_path(hash: &str) -> String {
     naive
 }
 
-/// Read the first line of any `.jsonl` session file in the project folder
-/// and extract `cwd`. Returns None if the folder doesn't exist, has no
-/// sessions, or the first line isn't parseable — caller falls back to
-/// folder-name decoding.
+/// Scan the leading lines of any `.jsonl` session file in the project folder
+/// and extract `cwd`. Newer Claude Code versions prepend metadata entries
+/// (`last-prompt`, `mode`, `summary`, ...) without a `cwd`, so checking only
+/// the first line is not enough (issue #2 regression). Returns None if the
+/// folder doesn't exist, has no sessions, or none of the scanned lines carry
+/// a `cwd` — caller falls back to folder-name decoding.
 fn cwd_from_session_file(hash: &str) -> Option<String> {
+    use std::io::BufRead;
+
+    const MAX_SCAN_LINES: usize = 30;
+
     let project_dir = projects_dir().join(hash);
     let entries = std::fs::read_dir(&project_dir).ok()?;
     for entry in entries.flatten() {
@@ -188,12 +194,14 @@ fn cwd_from_session_file(hash: &str) -> Option<String> {
         if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
             continue;
         }
-        let Ok(content) = std::fs::read_to_string(&path) else { continue };
-        let Some(first_line) = content.lines().next() else { continue };
-        let Ok(json) = serde_json::from_str::<serde_json::Value>(first_line) else { continue };
-        if let Some(cwd) = json.get("cwd").and_then(|v| v.as_str()) {
-            if !cwd.is_empty() {
-                return Some(cwd.to_string());
+        let Ok(file) = std::fs::File::open(&path) else { continue };
+        let reader = std::io::BufReader::new(file);
+        for line in reader.lines().take(MAX_SCAN_LINES).map_while(Result::ok) {
+            let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+            if let Some(cwd) = json.get("cwd").and_then(|v| v.as_str()) {
+                if !cwd.is_empty() {
+                    return Some(cwd.to_string());
+                }
             }
         }
     }
