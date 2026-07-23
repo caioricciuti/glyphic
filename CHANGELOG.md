@@ -4,6 +4,12 @@ All notable changes to Glyphic will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.20.1] - 2026-07-23
+
+### Fixed
+- **Windows project folders parsed incorrectly again ([#2](https://github.com/caioricciuti/glyphic/issues/2)).** Newer Claude Code versions start session `.jsonl` files with metadata entries (`last-prompt`, `mode`) that carry no `cwd`, so the resolver from v0.16.0 silently fell back to naive dash-to-slash decoding. `project_hash_to_path` now scans the first 30 lines of each session file for the authoritative `cwd` instead of only the first line. Reported by @mcbyte-it
+- **macOS Intel builds restored.** The x86_64 release job was pinned to the retired `macos-13` runner, so it never started and v0.20.0 shipped without an Intel DMG. The build now cross-compiles on `macos-latest`.
+
 ## [0.16.0] - 2026-04-16
 
 ### Fixed
