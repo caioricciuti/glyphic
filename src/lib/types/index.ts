@@ -1,5 +1,9 @@
 export type {
   Settings,
+  SandboxSettings,
+  SandboxCredentialFile,
+  SandboxCredentialEnvVar,
+  AutoModeSettings,
   SettingsScope,
   EffortLevel,
   ModelOption,

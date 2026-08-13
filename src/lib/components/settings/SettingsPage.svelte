@@ -4,6 +4,8 @@
   import type { Settings } from "$lib/types";
   import GeneralSettings from "./GeneralSettings.svelte";
   import PermissionsEditor from "./PermissionsEditor.svelte";
+  import SandboxEditor from "./SandboxEditor.svelte";
+  import AutoModeEditor from "./AutoModeEditor.svelte";
   import EnvVarsEditor from "./EnvVarsEditor.svelte";
   import ProjectPicker from "$lib/components/shared/ProjectPicker.svelte";
   import { getSelectedProjectPath } from "$lib/stores/project-context.svelte";
@@ -259,6 +261,8 @@
 
       <GeneralSettings bind:settings={globalSettings} />
       <PermissionsEditor bind:settings={globalSettings} />
+      <SandboxEditor bind:settings={globalSettings} />
+      <AutoModeEditor bind:settings={globalSettings} />
       <EnvVarsEditor bind:settings={globalSettings} />
 
       <!-- Maintenance -->
@@ -329,6 +333,8 @@
         </div>
         <GeneralSettings bind:settings={projectSettings} />
         <PermissionsEditor bind:settings={projectSettings} />
+        <SandboxEditor bind:settings={projectSettings} />
+        <AutoModeEditor bind:settings={projectSettings} scopeSupported={false} />
         <EnvVarsEditor bind:settings={projectSettings} />
       </div>
 
@@ -355,6 +361,8 @@
         </div>
         <GeneralSettings bind:settings={localSettings} />
         <PermissionsEditor bind:settings={localSettings} />
+        <SandboxEditor bind:settings={localSettings} />
+        <AutoModeEditor bind:settings={localSettings} scopeSupported={false} />
         <EnvVarsEditor bind:settings={localSettings} />
       </div>
     </div>

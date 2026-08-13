@@ -15,6 +15,45 @@ export interface ClaudeCapabilities {
   modelPinned: ModelOption[];
 }
 
+export interface SandboxCredentialFile {
+  path: string;
+  mode: "deny" | "mask";
+}
+
+export interface SandboxCredentialEnvVar {
+  name: string;
+  mode: "deny" | "mask";
+  injectHosts?: string[];
+}
+
+export interface SandboxSettings {
+  enabled?: boolean;
+  allowUnsandboxedCommands?: boolean;
+  filesystem?: {
+    disabled?: boolean;
+    allowWrite?: string[];
+    denyWrite?: string[];
+    allowRead?: string[];
+    denyRead?: string[];
+  };
+  network?: {
+    allowedDomains?: string[];
+    tlsTerminate?: Record<string, unknown>;
+  };
+  credentials?: {
+    files?: SandboxCredentialFile[];
+    envVars?: SandboxCredentialEnvVar[];
+  };
+}
+
+export interface AutoModeSettings {
+  environment?: string[];
+  allow?: string[];
+  soft_deny?: string[];
+  hard_deny?: string[];
+  classifyAllShell?: boolean;
+}
+
 export interface Settings {
   model?: string;
   effortLevel?: EffortLevel;
@@ -27,6 +66,8 @@ export interface Settings {
     ask?: string[];
     deny?: string[];
   };
+  sandbox?: SandboxSettings;
+  autoMode?: AutoModeSettings;
   env?: Record<string, string>;
   hooks?: Record<string, HookEventConfig[]>;
   mcpServers?: Record<string, McpServerConfig>;
