@@ -4,6 +4,25 @@ All notable changes to Glyphic will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.22.0] - 2026-08-13
+
+### Added
+- **Plugins v2.** Enable/disable toggle per plugin, update, prune of unused auto-installed dependencies, per-plugin details modal with component inventory and projected token cost, install scopes (user/project/local), and a new Sources tab to add, refresh, and remove plugin marketplaces. The installed list now comes from `claude plugin list --json` instead of parsing internal files
+- **MCP live testing.** Glyphic now speaks MCP over stdio: a flask button on any stdio server connects to it, lists its tools, and lets you execute tool calls with JSON arguments right from a test dialog. Covered by a fake-server roundtrip test
+- **Visual sandbox editor.** Edit `sandbox.*` from the Settings page: enable/fallback toggles, network domain allowlist, filesystem allow/deny read/write path lists, filesystem isolation toggle, and credential protection (deny or mask) for files and env vars
+- **Auto-mode rules editor.** Prose rule lists (environment, allow, soft deny, hard deny) plus the classify-all-shell toggle, with a heads-up on scopes Claude Code ignores
+- **Token-savings auto-approve toggle.** The optimizer hook auto-approving rewritten Bash commands is now a setting (still the default); switch it off to keep output filtering while Claude Code's normal permission prompts apply
+- **MCP move/copy overwrite warning.** Transfers now warn before overwriting a same-name server at the destination
+- **MEMORY.md pinned as the auto-memory index** on the Memory page
+
+### Fixed
+- Rapid project or scope switching can no longer show stale data on the Settings, Hooks, Rules, and MCP pages (in-flight loads are sequence-guarded)
+
+### Changed
+- All ~24 `as any` casts in the pipeline canvas replaced with shared typed node data
+- First Rust unit tests: path sanitization, atomic writes, script generation, escaping, and the MCP client roundtrip
+- Vite 8 (rolldown), vite-plugin-svelte 7, marked 18. TypeScript stays on 5.9.x until svelte-check supports TS 7
+
 ## [0.21.1] - 2026-08-13
 
 ### Fixed
