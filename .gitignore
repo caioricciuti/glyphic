@@ -7,5 +7,6 @@ src-tauri/target/
 .env.*
 
 CLAUDE.md
+WORK_LOG.md
 
 .claude/
