@@ -4,6 +4,22 @@ All notable changes to Glyphic will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.23.0] - 2026-08-13
+
+### Fixed
+- **Filter could hide errors behind success summaries.** When command output contained both an error and a success marker (e.g. `error:` plus `nothing to commit, working tree clean`), the `match_output` short-circuit replaced everything with the success summary before the `unless` guard could veto it. The guard now runs first, so errors always reach Claude
+- **`python -m pytest` output was never filtered** (the generic python rule shadowed the pytest rule) and the cargo test filter was permanently disabled by its own case-insensitive failure guard matching `0 failed`
+- **Context Engine hook panicked on multi-byte output** when the 4096-byte ref-id sample boundary split a UTF-8 character (box-drawing, emoji, CJK in build logs)
+- **Duplicate search hits** after re-storing the same tool result: FTS5 rows are now scrubbed before reinsert
+- **Savings percentage underflow** when a filter produced output longer than its input
+
+### Changed
+- **Honest Windows behavior.** The token optimizer and Context Engine require `sh`/`bash`; on Windows the hook now passes commands through untouched and enabling either feature explains the platform requirement instead of silently half-working
+- **Content-aware token estimates.** Bash savings are estimated from the actual text (ASCII ~3.8 bytes/token, CJK/emoji ~1 token per character) instead of blanket bytes/4
+- **`~/.glyphic` is created private (0700)**: savings logs and the context database can contain secrets from command output
+- The Context Engine page notes when Claude Code's native auto memory is also injecting context
+- **132 new tests** across the filter pipeline and context engine (154 total): builtin filter rules against realistic outputs, pipeline stages, FTS5/dedup/virtualization, and a retrieval-quality eval asserting hit@1 on seeded corpora
+
 ## [0.22.0] - 2026-08-13
 
 ### Added
