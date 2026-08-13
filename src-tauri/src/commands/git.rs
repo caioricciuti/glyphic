@@ -155,75 +155,85 @@ pub fn git_init(path: String) -> Result<String, String> {
 }
 
 /// Quote a value for safe embedding in a single-quoted POSIX shell string.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-/// Open a new terminal window and run `script` in it. Cross-platform: Terminal.app
-/// on macOS, the first available emulator on Linux, cmd.exe on Windows.
-pub fn spawn_terminal_with_command(script: &str) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        let escaped_script = script.replace('\\', "\\\\").replace('"', "\\\"");
-        return Command::new("osascript")
-            .args([
-                "-e",
-                &format!(
-                    "tell application \"Terminal\"
-                        activate
-                        do script \"{}\"
-                    end tell",
-                    escaped_script
-                ),
-            ])
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("failed to open terminal: {e}"));
-    }
+/// Open a new terminal window at `path` and run the `claude` CLI in it.
+#[cfg(target_os = "macos")]
+fn spawn_claude_terminal(path: &str) -> Result<(), String> {
+    let script = format!("cd {} && claude", shell_quote(path));
+    let escaped_script = script
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r");
+    Command::new("osascript")
+        .args([
+            "-e",
+            &format!(
+                "tell application \"Terminal\"
+                    activate
+                    do script \"{}\"
+                end tell",
+                escaped_script
+            ),
+        ])
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("failed to open terminal: {e}"))
+}
 
-    #[cfg(target_os = "linux")]
-    {
-        let full = format!("{script}; exec \"$SHELL\"");
-        let terminals: &[(&str, &str)] = &[
-            ("gnome-terminal", "--"),
-            ("konsole", "-e"),
-            ("xfce4-terminal", "-e"),
-            ("x-terminal-emulator", "-e"),
-            ("xterm", "-e"),
-        ];
-        for (bin, flag) in terminals {
-            let found = Command::new("which")
-                .arg(bin)
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            if !found {
-                continue;
-            }
-            if Command::new(bin).args([*flag, "sh", "-c", full.as_str()]).spawn().is_ok() {
-                return Ok(());
-            }
+/// Open a new terminal window at `path` and run the `claude` CLI in it, using
+/// the first available terminal emulator.
+#[cfg(target_os = "linux")]
+fn spawn_claude_terminal(path: &str) -> Result<(), String> {
+    let full = format!("cd {} && claude; exec \"$SHELL\"", shell_quote(path));
+    let terminals: &[(&str, &str)] = &[
+        ("gnome-terminal", "--"),
+        ("konsole", "-e"),
+        ("xfce4-terminal", "-e"),
+        ("x-terminal-emulator", "-e"),
+        ("xterm", "-e"),
+    ];
+    for (bin, flag) in terminals {
+        let found = Command::new("which")
+            .arg(bin)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !found {
+            continue;
         }
-        return Err("no supported terminal emulator found (tried gnome-terminal, konsole, xfce4-terminal, x-terminal-emulator, xterm)".to_string());
+        if Command::new(bin).args([*flag, "sh", "-c", full.as_str()]).spawn().is_ok() {
+            return Ok(());
+        }
     }
+    Err("no supported terminal emulator found (tried gnome-terminal, konsole, xfce4-terminal, x-terminal-emulator, xterm)".to_string())
+}
 
-    #[cfg(target_os = "windows")]
-    {
-        return Command::new("cmd")
-            .args(["/C", "start", "cmd", "/K", script])
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("failed to open terminal: {e}"));
+/// Open a new cmd.exe window at `path` and run the `claude` CLI in it.
+#[cfg(target_os = "windows")]
+fn spawn_claude_terminal(path: &str) -> Result<(), String> {
+    // cmd metacharacters can't be safely quoted through `start`; Windows paths
+    // can't legally contain `"` anyway, so reject rather than risk injection.
+    if path.contains('"') {
+        return Err("path contains an unsupported character".to_string());
     }
+    Command::new("cmd")
+        .args(["/C", "start", "cmd", "/K", &format!("cd /d \"{path}\" && claude")])
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("failed to open terminal: {e}"))
+}
 
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    {
-        Err("unsupported platform".to_string())
-    }
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+fn spawn_claude_terminal(_path: &str) -> Result<(), String> {
+    Err("unsupported platform".to_string())
 }
 
 #[tauri::command]
 pub fn open_in_terminal(path: String) -> Result<(), String> {
-    let script = format!("cd {} && claude", shell_quote(&path));
-    spawn_terminal_with_command(&script)
+    spawn_claude_terminal(&path)
 }
