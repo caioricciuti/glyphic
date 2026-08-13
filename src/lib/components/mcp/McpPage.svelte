@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api } from "$lib/tauri/commands";
+  import { api, type McpTestResult } from "$lib/tauri/commands";
   import type { SettingsScope } from "$lib/types";
   import ProjectPicker from "$lib/components/shared/ProjectPicker.svelte";
   import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
   import { getSelectedProjectPath, getProjects, isLoaded, loadProjects } from "$lib/stores/project-context.svelte";
-  import { Server, Plus, Cloud, Terminal, Globe, Trash2, Edit3, X, LayoutGrid, ArrowRightLeft, Copy, FolderOpen } from "lucide-svelte";
+  import { Server, Plus, Cloud, Terminal, Globe, Trash2, Edit3, X, LayoutGrid, ArrowRightLeft, Copy, FolderOpen, FlaskConical, Play } from "lucide-svelte";
   import TemplateGallery from "$lib/components/shared/TemplateGallery.svelte";
 
   interface ServerEntry {
@@ -184,7 +184,11 @@
     openMoveDialogFor(servers.filter((s) => selectedNames.has(s.name)));
   }
 
-  async function transferServer(mode: "move" | "copy") {
+  // Names that already exist at the destination, pending overwrite confirmation
+  let overwriteNames = $state<string[]>([]);
+  let pendingMode = $state<"move" | "copy">("copy");
+
+  async function transferServer(mode: "move" | "copy", confirmedOverwrite = false) {
     if (movingServers.length === 0 || isSameDestination) return;
     if (destNeedsProject && !destProjectPath.trim()) {
       transferError = "Pick a destination project";
@@ -194,6 +198,21 @@
     transferError = null;
     const destPP = destNeedsProject ? destProjectPath.trim() : undefined;
     const srcPP = needsProject ? projectPath ?? undefined : undefined;
+
+    if (!confirmedOverwrite) {
+      try {
+        const existing = await api.mcp.list(destScope, destPP);
+        const clashes = movingServers.filter((s) => s.name in existing).map((s) => s.name);
+        if (clashes.length > 0) {
+          overwriteNames = clashes;
+          pendingMode = mode;
+          transferring = false;
+          return;
+        }
+      } catch {
+        // Destination unreadable (e.g. file doesn't exist yet): nothing to overwrite
+      }
+    }
 
     const results = await Promise.allSettled(
       movingServers.map(async (s) => {
@@ -221,8 +240,128 @@
     transferring = false;
   }
 
+  // Live testing: spawn the configured server, list its tools, call them
+  let testingServer = $state<ServerEntry | null>(null);
+  let testResult = $state<McpTestResult | null>(null);
+  let testError = $state<string | null>(null);
+  let testLoading = $state(false);
+  let toolArgs = $state<Record<string, string>>({});
+  let toolResults = $state<Record<string, string>>({});
+  let toolRunning = $state<string | null>(null);
+
+  async function openTest(server: ServerEntry) {
+    testingServer = server;
+    testResult = null;
+    testError = null;
+    toolArgs = {};
+    toolResults = {};
+    testLoading = true;
+    try {
+      testResult = await api.mcp.test(server.config);
+    } catch (e) {
+      testError = String(e);
+    } finally {
+      testLoading = false;
+    }
+  }
+
+  async function runTool(name: string) {
+    if (!testingServer || toolRunning) return;
+    toolRunning = name;
+    let args: unknown = {};
+    const raw = toolArgs[name]?.trim();
+    if (raw) {
+      try {
+        args = JSON.parse(raw);
+      } catch {
+        toolResults = { ...toolResults, [name]: "Arguments must be valid JSON" };
+        toolRunning = null;
+        return;
+      }
+    }
+    try {
+      const res = await api.mcp.callTool(testingServer.config, name, args);
+      toolResults = { ...toolResults, [name]: JSON.stringify(res, null, 2) };
+    } catch (e) {
+      toolResults = { ...toolResults, [name]: `Error: ${e}` };
+    } finally {
+      toolRunning = null;
+    }
+  }
+
   onMount(loadServers);
 </script>
+
+{#if testingServer}
+  <div class="fixed inset-0 z-50 flex items-center justify-center">
+    <button class="absolute inset-0 bg-black/50" onclick={() => (testingServer = null)} aria-label="Close dialog"></button>
+    <div class="relative bg-bg-secondary border border-border rounded-xl shadow-2xl w-[600px] max-h-[75vh] p-6 z-10 flex flex-col">
+      <div class="flex items-center justify-between mb-1">
+        <h3 class="text-base font-semibold text-text-primary flex items-center gap-2">
+          <FlaskConical size={16} class="text-accent" />
+          Test {testingServer.name}
+        </h3>
+        <button class="p-1 text-text-muted hover:text-text-primary" onclick={() => (testingServer = null)} aria-label="Close">
+          <X size={16} />
+        </button>
+      </div>
+
+      {#if testLoading}
+        <p class="text-sm text-text-muted py-6">Connecting to server...</p>
+      {:else if testError}
+        <p class="text-xs text-danger font-mono whitespace-pre-wrap py-4">{testError}</p>
+      {:else if testResult}
+        <p class="text-xs text-text-muted mb-3">
+          Connected{#if testResult.serverInfo?.name}
+            to <span class="text-text-secondary">{testResult.serverInfo.name} {testResult.serverInfo.version ?? ""}</span>{/if}
+          {#if testResult.protocolVersion}(protocol {testResult.protocolVersion}){/if}
+          · {testResult.tools.length} tool{testResult.tools.length === 1 ? "" : "s"}
+        </p>
+        <div class="overflow-y-auto space-y-2">
+          {#each testResult.tools as tool (tool.name)}
+            <details class="bg-bg-tertiary rounded-lg">
+              <summary class="px-3 py-2 cursor-pointer">
+                <span class="text-sm font-mono text-text-primary">{tool.name}</span>
+                {#if tool.description}
+                  <span class="text-xs text-text-muted ml-2">{tool.description.slice(0, 80)}</span>
+                {/if}
+              </summary>
+              <div class="px-3 pb-3 space-y-2">
+                <textarea
+                  class="w-full h-16 px-2 py-1.5 text-xs bg-bg-secondary border border-border rounded-md text-text-primary font-mono focus:outline-none focus:border-accent resize-y"
+                  placeholder={'Arguments as JSON, e.g. {"query": "test"}'}
+                  bind:value={toolArgs[tool.name]}
+                ></textarea>
+                <button
+                  class="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-accent hover:bg-accent-hover text-white rounded-md transition-colors disabled:opacity-50"
+                  onclick={() => runTool(tool.name)}
+                  disabled={toolRunning !== null}
+                >
+                  <Play size={12} />
+                  {toolRunning === tool.name ? "Running..." : "Run"}
+                </button>
+                {#if toolResults[tool.name]}
+                  <pre class="text-xs text-text-secondary font-mono whitespace-pre-wrap bg-bg-secondary rounded-md p-2 max-h-48 overflow-y-auto">{toolResults[tool.name]}</pre>
+                {/if}
+              </div>
+            </details>
+          {:else}
+            <p class="text-sm text-text-muted">Server exposes no tools.</p>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  </div>
+{/if}
+
+<ConfirmDialog
+  open={overwriteNames.length > 0}
+  title="Overwrite Existing Server{overwriteNames.length === 1 ? '' : 's'}"
+  message="{overwriteNames.join(', ')} already exist{overwriteNames.length === 1 ? 's' : ''} at the destination and will be overwritten."
+  confirmLabel="Overwrite"
+  onconfirm={() => { overwriteNames = []; transferServer(pendingMode, true); }}
+  oncancel={() => (overwriteNames = [])}
+/>
 
 <ConfirmDialog
   open={deletingServerName !== null}
@@ -473,6 +612,11 @@
                   </p>
                 </div>
                 <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {#if isStdio}
+                    <button class="p-1.5 rounded hover:bg-bg-hover text-text-muted" onclick={(e) => { e.stopPropagation(); openTest(server); }} aria-label="Test server" title="Connect and try its tools">
+                      <FlaskConical size={14} />
+                    </button>
+                  {/if}
                   <button class="p-1.5 rounded hover:bg-bg-hover text-text-muted" onclick={(e) => { e.stopPropagation(); openMoveDialog(server); }} aria-label="Move or copy to another place" title="Move / copy to another place">
                     <ArrowRightLeft size={14} />
                   </button>

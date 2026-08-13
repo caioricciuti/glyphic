@@ -84,6 +84,9 @@ export const api = {
     delete: (scope: SettingsScope, name: string, projectPath?: string) =>
       invoke<void>("delete_mcp_server", { scope, projectPath, name }),
     getCloudMcps: () => invoke<string[]>("get_cloud_mcps"),
+    test: (config: unknown) => invoke<McpTestResult>("test_mcp_server", { config }),
+    callTool: (config: unknown, tool: string, args: unknown) =>
+      invoke<unknown>("call_mcp_tool", { config, tool, args }),
   },
 
   skills: {
@@ -225,6 +228,18 @@ export const api = {
     purgeLegacy: () => invoke<PurgeReport>("ctx_purge_legacy"),
   },
 } as const;
+
+export interface McpTool {
+  name: string;
+  description?: string;
+  inputSchema?: unknown;
+}
+
+export interface McpTestResult {
+  serverInfo?: { name?: string; version?: string };
+  protocolVersion?: string;
+  tools: McpTool[];
+}
 
 export type PluginScope = "user" | "project" | "local";
 

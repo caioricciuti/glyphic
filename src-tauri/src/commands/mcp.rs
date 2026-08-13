@@ -148,6 +148,171 @@ pub fn delete_mcp_server(
     settings::write_settings(scope, project_path, current)
 }
 
+// ── Live testing ────────────────────────────────────────────────────────────
+// Minimal MCP client over stdio (newline-delimited JSON-RPC 2.0): spawn the
+// configured server, initialize, then list or call tools. The child is killed
+// when the client drops.
+
+struct McpClient {
+    child: std::process::Child,
+    stdin: std::process::ChildStdin,
+    rx: std::sync::mpsc::Receiver<String>,
+    next_id: u64,
+}
+
+impl McpClient {
+    fn spawn(config: &serde_json::Value) -> Result<Self, String> {
+        use std::io::BufRead;
+        use std::process::{Command, Stdio};
+
+        let command = config
+            .get("command")
+            .and_then(|c| c.as_str())
+            .ok_or("only stdio servers (with a \"command\") can be live-tested for now")?;
+        let args: Vec<String> = config
+            .get("args")
+            .and_then(|a| a.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+
+        let mut cmd = Command::new(command);
+        cmd.args(&args)
+            .env("PATH", paths::enriched_path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        if let Some(env) = config.get("env").and_then(|e| e.as_object()) {
+            for (k, v) in env {
+                if let Some(val) = v.as_str() {
+                    cmd.env(k, val);
+                }
+            }
+        }
+
+        let mut child = cmd.spawn().map_err(|e| format!("failed to start server: {e}"))?;
+        let stdin = child.stdin.take().ok_or("failed to open server stdin")?;
+        let stdout = child.stdout.take().ok_or("failed to open server stdout")?;
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let reader = std::io::BufReader::new(stdout);
+            for line in reader.lines().map_while(Result::ok) {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok(Self { child, stdin, rx, next_id: 1 })
+    }
+
+    fn request(&mut self, method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
+        use std::io::Write;
+
+        let id = self.next_id;
+        self.next_id += 1;
+        let msg = serde_json::json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
+        writeln!(self.stdin, "{msg}").map_err(|e| format!("write to server failed: {e}"))?;
+        let _ = self.stdin.flush();
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        loop {
+            let remaining = deadline
+                .checked_duration_since(std::time::Instant::now())
+                .ok_or_else(|| format!("timed out waiting for {method} response"))?;
+            let line = self
+                .rx
+                .recv_timeout(remaining)
+                .map_err(|_| format!("timed out waiting for {method} response (is this a valid MCP stdio server?)"))?;
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
+                continue; // non-JSON noise on stdout
+            };
+            if value.get("id").and_then(|i| i.as_u64()) == Some(id) {
+                if let Some(err) = value.get("error") {
+                    return Err(format!("server error: {err}"));
+                }
+                return Ok(value.get("result").cloned().unwrap_or(serde_json::Value::Null));
+            }
+            // notifications and unrelated ids are skipped
+        }
+    }
+
+    fn initialize(&mut self) -> Result<serde_json::Value, String> {
+        use std::io::Write;
+
+        let init = self.request(
+            "initialize",
+            serde_json::json!({
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": { "name": "glyphic", "version": env!("CARGO_PKG_VERSION") }
+            }),
+        )?;
+        let note = serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
+        let _ = writeln!(self.stdin, "{note}");
+        let _ = self.stdin.flush();
+        Ok(init)
+    }
+}
+
+impl Drop for McpClient {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// Connect to a server, initialize, and list its tools.
+#[tauri::command(async)]
+pub fn test_mcp_server(config: serde_json::Value) -> Result<serde_json::Value, String> {
+    let mut client = McpClient::spawn(&config)?;
+    let init = client.initialize()?;
+    let tools = client.request("tools/list", serde_json::json!({}))?;
+    Ok(serde_json::json!({
+        "serverInfo": init.get("serverInfo"),
+        "protocolVersion": init.get("protocolVersion"),
+        "tools": tools.get("tools").cloned().unwrap_or(serde_json::json!([])),
+    }))
+}
+
+/// Connect to a server and execute one tool call.
+#[tauri::command(async)]
+pub fn call_mcp_tool(
+    config: serde_json::Value,
+    tool: String,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut client = McpClient::spawn(&config)?;
+    client.initialize()?;
+    client.request("tools/call", serde_json::json!({ "name": tool, "arguments": args }))
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    #[test]
+    fn mcp_client_roundtrip_against_fake_stdio_server() {
+        // A fake MCP server: answers initialize (id 1) and tools/list (id 2),
+        // with a stray notification in between that the client must skip.
+        let script = concat!(
+            "while read line; do case \"$line\" in ",
+            "*initialize*) echo '{\"jsonrpc\":\"2.0\",\"method\":\"notifications/log\",\"params\":{}}'; ",
+            "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\",\"serverInfo\":{\"name\":\"fake\",\"version\":\"1.0\"}}}';; ",
+            "*tools/list*) echo '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[{\"name\":\"echo\",\"description\":\"Echo tool\"}]}}';; ",
+            "esac; done"
+        );
+        let config = serde_json::json!({ "command": "sh", "args": ["-c", script] });
+        let result = super::test_mcp_server(config).expect("roundtrip should succeed");
+        assert_eq!(result["serverInfo"]["name"], "fake");
+        assert_eq!(result["tools"][0]["name"], "echo");
+    }
+
+    #[test]
+    fn mcp_client_rejects_url_only_config() {
+        let config = serde_json::json!({ "url": "https://example.com/mcp" });
+        assert!(super::test_mcp_server(config).is_err());
+    }
+}
+
 #[tauri::command]
 pub fn get_cloud_mcps() -> Result<Vec<String>, String> {
     let path = paths::claude_home().join("mcp-needs-auth-cache.json");

@@ -126,6 +126,8 @@ pub fn run() {
             commands::mcp::upsert_mcp_server,
             commands::mcp::delete_mcp_server,
             commands::mcp::get_cloud_mcps,
+            commands::mcp::test_mcp_server,
+            commands::mcp::call_mcp_tool,
             // Skills & Agents
             commands::skills::list_skills,
             commands::skills::list_agents,
