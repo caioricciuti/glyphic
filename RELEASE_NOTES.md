@@ -1,8 +1,27 @@
-## Glyphic v0.20.1
+## Glyphic v0.21.0
 
-Patch release fixing a Windows regression and the missing macOS Intel build.
+Feature release landing community PR [#6](https://github.com/caioricciuti/glyphic/pull/6) plus a security hardening pass across the Rust backend.
+
+### New
+
+- **Resume and delete sessions** (thanks @mohamed-chebbi-adeo). Resume any past session straight into the built-in terminal, or delete its `.jsonl` file with confirmation. Deletion is restricted to session files inside the Claude projects directory.
+- **Move / copy MCP servers between scopes.** Move or copy servers between Desktop, Global, Local, and Project scopes, individually or in bulk with multi-select.
+- **Open in Terminal on Linux and Windows.** Previously macOS-only; Linux picks the first available terminal emulator, Windows opens cmd.
+
+### Security
+
+- Closed a path traversal in memory file reads (unsanitized filename could reach arbitrary files).
+- The token-optimizer hook no longer double-evaluates Bash commands: rewritten commands travel base64-encoded and run in exactly one shell, so `$(…)` and backticks can't execute twice.
+- Closed AppleScript injection in pipeline notifications, where upstream node output (including HTTP responses) could reach `do shell script`.
+- Scheduled pipeline scripts no longer embed raw node labels, pipeline names, or unvalidated pipeline ids.
 
 ### Fixes
 
-- **Windows project folders parsed incorrectly again ([#2](https://github.com/caioricciuti/glyphic/issues/2)).** Newer Claude Code versions start session `.jsonl` files with metadata entries (`last-prompt`, `mode`) that carry no `cwd`, so the v0.16.0 resolver silently fell back to naive dash-to-slash decoding and paths like `C:\Development\TestProject` showed up mangled. The resolver now scans the first 30 lines of each session file for the authoritative `cwd` instead of only the first line. Thanks @mcbyte-it for catching the regression.
-- **macOS Intel builds restored.** The x86_64 release job was pinned to GitHub's retired `macos-13` runner, so it never started and v0.20.0 shipped without an Intel DMG. The build now cross-compiles on `macos-latest`.
+- Settings writes are atomic (temp file + rename), so a crash mid-write can't truncate `settings.json` anymore.
+- The pipeline runner recovers from panics instead of staying locked until app restart.
+- Terminal input handles emoji and CJK; several UTF-8 boundary panics removed.
+- Pipeline `git clone` with a branch uses `-b` correctly.
+
+### Changed
+
+- Frontend and Rust dependencies updated within semver ranges.

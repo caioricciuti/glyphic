@@ -4,6 +4,29 @@ All notable changes to Glyphic will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.21.0] - 2026-08-13
+
+### Added
+- **Resume and delete sessions** ([#6](https://github.com/caioricciuti/glyphic/pull/6), thanks @mohamed-chebbi-adeo). Any past session can now be resumed straight into the built-in terminal (`claude --resume` through the PTY), and session `.jsonl` files can be deleted from the Sessions page with a confirmation dialog. Deletion is restricted to `.jsonl` files inside the Claude projects directory
+- **Move / copy MCP servers between scopes** ([#6](https://github.com/caioricciuti/glyphic/pull/6)). Servers can be moved or copied between Desktop, Global, Local, and Project scopes, one at a time or in bulk via multi-select, with per-server failure reporting
+- **Open in Terminal now works on Linux and Windows.** Previously macOS-only; Linux picks the first available emulator (gnome-terminal, konsole, xfce4-terminal, x-terminal-emulator, xterm), Windows opens cmd
+
+### Security
+- **Memory file path traversal closed.** `read_memory_file` joined an unsanitized filename, so a crafted path could read arbitrary files; filename and project hash are now validated in all memory commands
+- **Filter hook commands are evaluated exactly once.** The token-optimizer PreToolUse hook re-quoted the Bash command into a double-quoted string, so `$(…)`, backticks and `$VARs` were expanded by the outer shell and then executed again by `glyphic-filter exec`; side-effecting substitutions ran twice. The command now travels base64-encoded and runs only in the shell that `exec` spawns
+- **AppleScript injection in notifications closed.** Pipeline notification bodies (which default to upstream node output, including HTTP responses) could break out of the AppleScript string and run arbitrary code via `do shell script`. The in-process runner now escapes properly; generated schedule scripts pass values as osascript argv instead of splicing them into code
+- **Scheduled pipeline scripts no longer interpolate raw user input.** Node labels and pipeline names are stripped of shell metacharacters before embedding, and `pipeline_id` is validated before being used in script, log, and LaunchAgents plist paths
+
+### Fixed
+- **A crash can no longer truncate `settings.json`.** All settings, MCP config, hooks, and optimizer writes go through an atomic temp-file + rename, so a crash mid-write leaves the previous file intact instead of a half-written one
+- **Pipeline runner no longer deadlocks after a panic.** The running flag is reset via a drop guard, so a panicked node can't leave "a pipeline run is already in progress" stuck until app restart
+- **Typing emoji or CJK in the terminal no longer drops keystrokes.** Keystrokes are UTF-8 encoded before base64, where `btoa()` used to throw on non-Latin1 input
+- **UTF-8 panics removed.** Context truncation, schedule log truncation, and `~` path expansion no longer panic on multi-byte characters or a bare `~`
+- **Pipeline git clone with a branch now uses `-b`** instead of passing the branch as a positional argument
+
+### Changed
+- Frontend and Rust dependencies updated within semver ranges (codemirror, Tauri API/CLI/plugins, Svelte, Tailwind, DOMPurify, xyflow, and transitive Rust crates)
+
 ## [0.20.1] - 2026-07-23
 
 ### Fixed
