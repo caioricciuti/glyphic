@@ -54,23 +54,30 @@
     } catch (e) { showSave(`Error: ${e}`); }
   }
 
+  // Guards against a slow response landing over a newer one on rapid switching
+  let loadSeq = 0;
+
   async function loadSettings() {
+    const seq = ++loadSeq;
     loading = true;
     try {
       if (activeTab === "global") {
-        globalSettings = await api.settings.read("global");
+        const global = await api.settings.read("global");
+        if (seq !== loadSeq) return;
+        globalSettings = global;
       } else if (projectPath) {
         const [proj, local] = await Promise.all([
           api.settings.read("project", projectPath),
           api.settings.read("local", projectPath),
         ]);
+        if (seq !== loadSeq) return;
         projectSettings = proj;
         localSettings = local;
       }
     } catch (e) {
-      console.error("Failed to load settings:", e);
+      if (seq === loadSeq) console.error("Failed to load settings:", e);
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
   }
 

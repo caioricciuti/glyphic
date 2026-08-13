@@ -62,13 +62,19 @@
     return (rawHooks[event] ?? []).reduce((sum, c) => sum + c.hooks.length, 0);
   }
 
+  // Guards against a slow response landing over a newer one on rapid switching
+  let loadSeq = 0;
+
   async function loadHooks() {
     if (needsProject && !projectPath) { loading = false; rawHooks = {}; return; }
+    const seq = ++loadSeq;
     loading = true;
     try {
-      rawHooks = (await api.hooks.get(scope, needsProject ? projectPath ?? undefined : undefined)) as Record<string, HookEventConfig[]>;
-    } catch (e) { console.error("Failed:", e); rawHooks = {}; }
-    finally { loading = false; }
+      const result = (await api.hooks.get(scope, needsProject ? projectPath ?? undefined : undefined)) as Record<string, HookEventConfig[]>;
+      if (seq !== loadSeq) return;
+      rawHooks = result;
+    } catch (e) { if (seq === loadSeq) { console.error("Failed:", e); rawHooks = {}; } }
+    finally { if (seq === loadSeq) loading = false; }
   }
 
   async function saveHooks() {

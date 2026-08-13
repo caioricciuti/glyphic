@@ -67,8 +67,12 @@
       (destNeedsProject ? destProjectPath : "") === (needsProject ? (projectPath ?? "") : ""),
   );
 
+  // Guards against a slow response landing over a newer one on rapid switching
+  let loadSeq = 0;
+
   async function loadServers() {
     if (needsProject && !projectPath) { loading = false; servers = []; return; }
+    const seq = ++loadSeq;
     loading = true;
     try {
       const pp = needsProject ? projectPath ?? undefined : undefined;
@@ -76,9 +80,11 @@
         api.mcp.list(scope, pp) as Promise<Record<string, Record<string, unknown>>>,
         api.mcp.getCloudMcps(),
       ]);
+      if (seq !== loadSeq) return;
       servers = Object.entries(raw).map(([name, config]) => ({ name, config }));
       cloudMcps = cloud;
     } catch (e) {
+      if (seq !== loadSeq) return;
       console.error("Failed:", e);
       servers = [];
     } finally {

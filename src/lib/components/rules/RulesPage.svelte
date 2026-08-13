@@ -36,14 +36,20 @@
     rules.filter((r) => !searchQuery || r.name.toLowerCase().includes(searchQuery.toLowerCase())),
   );
 
+  // Guards against a slow response landing over a newer one on rapid switching
+  let loadSeq = 0;
+
   async function loadRules() {
     if (needsProject && !projectPath) { loading = false; rules = []; return; }
+    const seq = ++loadSeq;
     loading = true;
     try {
       const pp = needsProject ? projectPath ?? undefined : undefined;
-      rules = await api.rules.list(scope, pp);
-    } catch (e) { console.error("Failed:", e); rules = []; }
-    finally { loading = false; }
+      const result = await api.rules.list(scope, pp);
+      if (seq !== loadSeq) return;
+      rules = result;
+    } catch (e) { if (seq === loadSeq) { console.error("Failed:", e); rules = []; } }
+    finally { if (seq === loadSeq) loading = false; }
   }
 
   function selectRule(rule: RuleFile) {

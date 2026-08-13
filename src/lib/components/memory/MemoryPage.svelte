@@ -38,6 +38,13 @@
 
   const TYPE_ICONS = { user: User, feedback: MessageSquare, project: FolderOpen, reference: BookOpen };
 
+  // MEMORY.md is the auto-memory index Claude loads each session; pin it first
+  const sortedFiles = $derived(
+    [...memoryFiles].sort((a, b) =>
+      a.filename === "MEMORY.md" ? -1 : b.filename === "MEMORY.md" ? 1 : a.filename.localeCompare(b.filename),
+    ),
+  );
+
   // Filter to only projects with memory
   const filteredProjects = $derived(
     projects
@@ -209,7 +216,7 @@
         </div>
       {:else}
         <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
-          {#each memoryFiles as file}
+          {#each sortedFiles as file}
             {@const typeColor = TYPE_COLORS[file.memory_type ?? ""] ?? "bg-bg-tertiary text-text-muted"}
             {@const TypeIcon = TYPE_ICONS[file.memory_type as keyof typeof TYPE_ICONS] ?? Brain}
             <button
@@ -222,7 +229,9 @@
                   <div class="w-6 h-6 rounded flex items-center justify-center {typeColor}">
                     <TypeIcon size={12} />
                   </div>
-                  {#if file.memory_type}
+                  {#if file.filename === "MEMORY.md"}
+                    <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-accent/10 text-accent" title="Loaded into context at the start of every session">index</span>
+                  {:else if file.memory_type}
                     <span class="text-[10px] px-1.5 py-0.5 rounded-full {typeColor}">{file.memory_type}</span>
                   {/if}
                 </div>
