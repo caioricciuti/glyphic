@@ -450,3 +450,72 @@ pub fn list_pipeline_logs(pipeline_id: String) -> Result<Vec<ScheduleLog>, Strin
 
     Ok(logs)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::pipelines::{PipelineConnection, PipelineNode};
+    use serde_json::json;
+
+    #[test]
+    fn safe_embed_keeps_allowed_chars() {
+        assert_eq!(safe_embed("My Pipeline"), "My Pipeline");
+        assert_eq!(safe_embed("build-1_2.3:ok"), "build-1_2.3:ok");
+    }
+
+    #[test]
+    fn safe_embed_strips_dangerous_chars() {
+        assert_eq!(safe_embed("a\"b`c$d\ne"), "abcde");
+        assert_eq!(safe_embed("$(rm -rf /)"), "rm -rf ");
+        assert_eq!(safe_embed("`whoami`"), "whoami");
+    }
+
+    #[test]
+    fn shell_quote_wraps_and_escapes() {
+        assert_eq!(shell_quote("plain"), "'plain'");
+        assert_eq!(shell_quote(""), "''");
+        assert_eq!(shell_quote("it's"), "'it'\\''s'");
+    }
+
+    fn node(id: &str, node_type: &str, label: &str, config: serde_json::Value) -> PipelineNode {
+        PipelineNode {
+            id: id.to_string(),
+            node_type: node_type.to_string(),
+            label: label.to_string(),
+            x: 0.0,
+            y: 0.0,
+            config,
+        }
+    }
+
+    #[test]
+    fn generate_script_smoke() {
+        let pipeline = Pipeline {
+            id: "test-pipe".to_string(),
+            name: "Test `Pipeline`".to_string(),
+            nodes: vec![
+                node("n1", "input", "Start", json!({})),
+                node("n2", "bash", "Run Cmd", json!({"command": "echo hi"})),
+                node("n3", "output", "End", json!({})),
+            ],
+            connections: vec![
+                PipelineConnection { id: "c1".to_string(), from_node: "n1".to_string(), to_node: "n2".to_string() },
+                PipelineConnection { id: "c2".to_string(), from_node: "n2".to_string(), to_node: "n3".to_string() },
+            ],
+            created_at: String::new(),
+            updated_at: String::new(),
+            schedule: None,
+            schedule_enabled: false,
+            last_run: None,
+            last_run_status: None,
+        };
+
+        let script = generate_script(&pipeline);
+        assert!(script.starts_with("#!/bin/bash"));
+        // Backticks in the pipeline name must be stripped before embedding
+        assert!(script.contains("=== Pipeline: Test Pipeline ==="));
+        // The bash node command is shell-quoted and run via bash -c
+        assert!(script.contains("bash -c 'echo hi'"));
+        assert!(script.contains("NODE_OUTPUTS[\"Run Cmd\"]"));
+    }
+}

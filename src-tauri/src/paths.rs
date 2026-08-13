@@ -253,3 +253,39 @@ fn resolve_segments(segments: &[&str], idx: usize, current: &str) -> Option<Stri
 
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_component_accepts_normal_names() {
+        for name in ["settings.json", "my-pipeline_1", "CLAUDE.md", "a b c", "run.2024"] {
+            assert_eq!(sanitize_component(name), Ok(name));
+        }
+    }
+
+    #[test]
+    fn sanitize_component_rejects_unsafe_names() {
+        for name in ["", ".", "..", "a/b", "/abs", "a\\b", "..\\up", "nul\0byte"] {
+            assert!(sanitize_component(name).is_err(), "should reject {name:?}");
+        }
+    }
+
+    #[test]
+    fn write_atomic_writes_and_replaces() {
+        let dir = std::env::temp_dir().join(format!("glyphic-write-atomic-test-{}", std::process::id()));
+        let target = dir.join("nested").join("file.txt");
+
+        write_atomic(&target, "first").expect("initial write");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "first");
+
+        write_atomic(&target, "second").expect("overwrite");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "second");
+
+        // The temp file must have been renamed away, not left behind
+        assert!(!dir.join("nested").join(".file.txt.glyphic-tmp").exists());
+
+        std::fs::remove_dir_all(&dir).expect("cleanup");
+    }
+}

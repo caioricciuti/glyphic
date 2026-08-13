@@ -805,3 +805,80 @@ fn chrono_now() -> String {
     let s = secs % 60;
     format!("{h:02}:{m:02}:{s:02}")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn expand_tilde_bare() {
+        let home = dirs::home_dir().unwrap().display().to_string();
+        assert_eq!(expand_tilde("~"), home);
+    }
+
+    #[test]
+    fn expand_tilde_prefix() {
+        let home = dirs::home_dir().unwrap().display().to_string();
+        assert_eq!(expand_tilde("~/projects/x"), format!("{home}/projects/x"));
+    }
+
+    #[test]
+    fn expand_tilde_passthrough() {
+        assert_eq!(expand_tilde("/usr/local/bin"), "/usr/local/bin");
+        assert_eq!(expand_tilde("relative/path"), "relative/path");
+        // ~user form is not expanded
+        assert_eq!(expand_tilde("~other/x"), "~other/x");
+    }
+
+    #[test]
+    fn truncate_str_short_passthrough() {
+        assert_eq!(truncate_str("hello", 10), "hello");
+        assert_eq!(truncate_str("", 10), "");
+    }
+
+    #[test]
+    fn truncate_str_truncates_long_input() {
+        assert_eq!(truncate_str("hello world", 5), "hello...(truncated)");
+    }
+
+    #[test]
+    fn truncate_str_multibyte_does_not_panic() {
+        let s = "🎉".repeat(10); // 40 bytes, 10 chars
+        let out = truncate_str(&s, 5);
+        assert!(out.starts_with("🎉🎉🎉🎉🎉"));
+        assert!(out.ends_with("...(truncated)"));
+    }
+
+    #[test]
+    fn shell_escape_wraps_and_escapes() {
+        assert_eq!(shell_escape("plain"), "'plain'");
+        assert_eq!(shell_escape("it's"), "'it'\\''s'");
+        assert_eq!(shell_escape(""), "''");
+    }
+
+    #[test]
+    fn applescript_escape_escapes_specials() {
+        assert_eq!(applescript_escape("say \"hi\""), "say \\\"hi\\\"");
+        assert_eq!(applescript_escape("a\\b"), "a\\\\b");
+        assert_eq!(applescript_escape("line1\nline2\r"), "line1\\nline2\\r");
+        assert_eq!(applescript_escape("plain"), "plain");
+    }
+
+    #[test]
+    fn traverse_json_path_basics() {
+        let v = json!({
+            "count": 2,
+            "data": { "items": [ { "name": "first" }, { "name": "second" } ] }
+        });
+
+        assert_eq!(traverse_json_path(&v, ""), Some(&v));
+        assert_eq!(traverse_json_path(&v, "count"), Some(&json!(2)));
+        assert_eq!(traverse_json_path(&v, "data.items[1].name"), Some(&json!("second")));
+        assert_eq!(traverse_json_path(&v, "missing"), None);
+        assert_eq!(traverse_json_path(&v, "data.items[9]"), None);
+
+        let arr = json!([10, 20, 30]);
+        assert_eq!(traverse_json_path(&arr, "[2]"), Some(&json!(30)));
+    }
+}
