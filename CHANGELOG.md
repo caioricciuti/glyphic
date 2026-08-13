@@ -4,6 +4,11 @@ All notable changes to Glyphic will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.21.1] - 2026-08-13
+
+### Fixed
+- **Plugin uninstall actually uninstalls.** The Plugins page ran `claude plugin install "uninstall <name>"`, which the CLI rejects with "not found in marketplace". There is now a proper `uninstall_plugin` command that runs `claude plugin uninstall <name>`
+
 ## [0.21.0] - 2026-08-13
 
 ### Added
