@@ -50,16 +50,16 @@
     "codemirror": "^6.0.2",
     "dompurify": "^3.4.13",
     "lucide-svelte": "^1.0.1",
-    "marked": "^17.0.6"
+    "marked": "^18.0.9"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "^2.11.4",
     "svelte": "^5.56.9",
     "svelte-check": "^4.7.6",
     "tailwindcss": "^4.3.3",
-    "@tailwindcss/vite": "^4.3.3",
     "typescript": "^5.9.3",
-    "vite": "^6.4.3"
+    "vite": "^8.2.1"
   }
 }
