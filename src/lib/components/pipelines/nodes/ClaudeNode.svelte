@@ -1,11 +1,11 @@
 <script lang="ts">
-  import type { NodeProps } from "@xyflow/svelte";
+  import type { PipelineNodeProps } from "$lib/types";
   import BaseNode from "./BaseNode.svelte";
   import { Bot } from "lucide-svelte";
 
-  let { data }: NodeProps = $props();
+  let { data }: PipelineNodeProps = $props();
 </script>
 
-<BaseNode label={((data as any).label) ?? "Claude Prompt"} subtitle={((data as any).config)?.prompt?.slice(0, 40) || "Set prompt..."} status={((data as any).status)} color="border-accent">
+<BaseNode label={data.label ?? "Claude Prompt"} subtitle={data.config?.prompt?.slice(0, 40) || "Set prompt..."} status={data.status} color="border-accent">
   {#snippet icon()}<Bot size={14} class="text-accent" />{/snippet}
 </BaseNode>

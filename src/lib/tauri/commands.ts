@@ -124,8 +124,22 @@ export const api = {
     getBlocked: () => invoke<unknown>("get_blocked_plugins"),
     getMarketplace: () => invoke<unknown>("get_marketplace_plugins"),
     getInstallCounts: () => invoke<unknown>("get_install_counts"),
-    install: (name: string) => invoke<string>("install_plugin", { name }),
-    uninstall: (name: string) => invoke<string>("uninstall_plugin", { name }),
+    list: () => invoke<InstalledPlugin[]>("list_plugins"),
+    install: (name: string, scope?: PluginScope, projectPath?: string) =>
+      invoke<string>("install_plugin", { name, scope, projectPath }),
+    uninstall: (name: string, scope?: PluginScope, projectPath?: string) =>
+      invoke<string>("uninstall_plugin", { name, scope, projectPath }),
+    enable: (name: string, scope?: PluginScope, projectPath?: string) =>
+      invoke<string>("enable_plugin", { name, scope, projectPath }),
+    disable: (name: string, scope?: PluginScope, projectPath?: string) =>
+      invoke<string>("disable_plugin", { name, scope, projectPath }),
+    update: (name: string) => invoke<string>("update_plugin", { name }),
+    prune: () => invoke<string>("prune_plugins"),
+    details: (name: string) => invoke<string>("plugin_details", { name }),
+    marketplaceList: () => invoke<Marketplace[]>("marketplace_list"),
+    marketplaceAdd: (source: string) => invoke<string>("marketplace_add", { source }),
+    marketplaceRemove: (name: string) => invoke<string>("marketplace_remove", { name }),
+    marketplaceUpdate: (name?: string) => invoke<string>("marketplace_update", { name }),
   },
 
   maintenance: {
@@ -211,6 +225,25 @@ export const api = {
     purgeLegacy: () => invoke<PurgeReport>("ctx_purge_legacy"),
   },
 } as const;
+
+export type PluginScope = "user" | "project" | "local";
+
+export interface InstalledPlugin {
+  id: string;
+  version: string;
+  scope: PluginScope;
+  enabled: boolean;
+  installPath: string;
+  installedAt: string;
+  lastUpdated: string;
+}
+
+export interface Marketplace {
+  name: string;
+  source: string;
+  repo?: string;
+  installLocation: string;
+}
 
 export interface ContextEngineStatus {
   enabled: boolean;

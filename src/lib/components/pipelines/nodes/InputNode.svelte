@@ -1,11 +1,11 @@
 <script lang="ts">
-  import type { NodeProps } from "@xyflow/svelte";
+  import type { PipelineNodeProps } from "$lib/types";
   import BaseNode from "./BaseNode.svelte";
   import { Play } from "lucide-svelte";
 
-  let { data }: NodeProps = $props();
+  let { data }: PipelineNodeProps = $props();
 </script>
 
-<BaseNode label={((data as any).label) ?? "Start"} subtitle="input" status={((data as any).status)} color="border-warning" hasInput={false}>
+<BaseNode label={data.label ?? "Start"} subtitle="input" status={data.status} color="border-warning" hasInput={false}>
   {#snippet icon()}<Play size={14} class="text-warning" />{/snippet}
 </BaseNode>

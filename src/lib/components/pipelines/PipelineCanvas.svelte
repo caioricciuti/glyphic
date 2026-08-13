@@ -2,6 +2,7 @@
   import { SvelteFlow, Controls, Background, MiniMap, BackgroundVariant } from "@xyflow/svelte";
   import "@xyflow/svelte/dist/style.css";
   import type { Node, Edge } from "@xyflow/svelte";
+  import type { PipelineNodeStatus } from "$lib/types";
 
   import ClaudeNode from "./nodes/ClaudeNode.svelte";
   import BashNode from "./nodes/BashNode.svelte";
@@ -23,12 +24,10 @@
     GitCommitHorizontal, Filter, FileInput, FileOutput, Bell, Braces,
   } from "lucide-svelte";
 
-  type NodeStatus = "idle" | "running" | "done" | "error";
-
   interface Props {
     nodes: Node[];
     edges: Edge[];
-    nodeStatuses?: Record<string, NodeStatus>;
+    nodeStatuses?: Record<string, PipelineNodeStatus>;
     onselectnode?: (node: Node | null) => void;
   }
 
@@ -124,7 +123,7 @@
     showPalette = false;
   }
 
-  function onNodeClick(_: MouseEvent, node: Node) {
+  function onNodeClick(node: Node) {
     onselectnode?.(node);
   }
 
@@ -155,8 +154,8 @@
     bind:edges
     fitView
     defaultEdgeOptions={{ animated: true, type: "smoothstep" }}
-    onnodeclick={(e: any) => onNodeClick(e.event ?? e.detail?.event, e.node ?? e.detail?.node)}
-    onedgecontextmenu={(e: any) => onEdgeContextMenu(e.event ?? e.detail?.event, e.edge ?? e.detail?.edge)}
+    onnodeclick={({ node }) => onNodeClick(node)}
+    onedgecontextmenu={({ edge, event }) => onEdgeContextMenu(event, edge)}
     onpaneclick={onPaneClick}
     deleteKey={["Delete", "Backspace"]}
     colorMode="dark"

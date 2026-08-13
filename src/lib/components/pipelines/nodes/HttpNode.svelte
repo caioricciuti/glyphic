@@ -1,12 +1,12 @@
 <script lang="ts">
-  import type { NodeProps } from "@xyflow/svelte";
+  import type { PipelineNodeProps } from "$lib/types";
   import BaseNode from "./BaseNode.svelte";
   import { Globe } from "lucide-svelte";
 
-  let { data }: NodeProps = $props();
-  const subtitle = $derived(`${((data as any).config)?.method || "GET"} ${((data as any).config)?.url?.slice(0, 30) || "Set URL..."}`);
+  let { data }: PipelineNodeProps = $props();
+  const subtitle = $derived(`${data.config?.method || "GET"} ${data.config?.url?.slice(0, 30) || "Set URL..."}`);
 </script>
 
-<BaseNode label={((data as any).label) ?? "HTTP Request"} {subtitle} status={((data as any).status)} color="border-danger">
+<BaseNode label={data.label ?? "HTTP Request"} {subtitle} status={data.status} color="border-danger">
   {#snippet icon()}<Globe size={14} class="text-danger" />{/snippet}
 </BaseNode>

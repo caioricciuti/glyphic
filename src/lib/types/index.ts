@@ -32,3 +32,10 @@ export type {
   DiscoverResult,
   FilterRules,
 } from "./token-savings";
+export type {
+  PipelineNodeStatus,
+  PipelineNodeConfig,
+  PipelineNodeData,
+  PipelineNode,
+  PipelineNodeProps,
+} from "./pipelines";

@@ -1,12 +1,12 @@
 <script lang="ts">
-  import type { NodeProps } from "@xyflow/svelte";
+  import type { PipelineNodeProps } from "$lib/types";
   import BaseNode from "./BaseNode.svelte";
   import { FileInput } from "lucide-svelte";
 
-  let { data }: NodeProps = $props();
-  const subtitle = $derived(((data as any).config)?.path?.slice(0, 30) || "Set path...");
+  let { data }: PipelineNodeProps = $props();
+  const subtitle = $derived(data.config?.path?.slice(0, 30) || "Set path...");
 </script>
 
-<BaseNode label={((data as any).label) ?? "Read File"} {subtitle} status={((data as any).status)} color="border-info">
+<BaseNode label={data.label ?? "Read File"} {subtitle} status={data.status} color="border-info">
   {#snippet icon()}<FileInput size={14} class="text-info" />{/snippet}
 </BaseNode>

@@ -1,12 +1,12 @@
 <script lang="ts">
-  import type { NodeProps } from "@xyflow/svelte";
+  import type { PipelineNodeProps } from "$lib/types";
   import BaseNode from "./BaseNode.svelte";
   import { Filter } from "lucide-svelte";
 
-  let { data }: NodeProps = $props();
-  const subtitle = $derived(((data as any).config)?.condition || "not_empty");
+  let { data }: PipelineNodeProps = $props();
+  const subtitle = $derived(data.config?.condition || "not_empty");
 </script>
 
-<BaseNode label={((data as any).label) ?? "Filter"} {subtitle} status={((data as any).status)} color="border-accent">
+<BaseNode label={data.label ?? "Filter"} {subtitle} status={data.status} color="border-accent">
   {#snippet icon()}<Filter size={14} class="text-accent" />{/snippet}
 </BaseNode>
