@@ -125,6 +125,28 @@ fn count_lines(path: &Path) -> Result<u64, String> {
 
 // ── Enable / Disable ────────────────────────────────────────────────────────
 
+/// Whether the PreToolUse hook auto-approves rewritten Bash commands.
+#[tauri::command]
+pub fn get_optimizer_auto_approve() -> bool {
+    SavingsTracker::auto_approve()
+}
+
+#[tauri::command]
+pub fn set_optimizer_auto_approve(enabled: bool) -> Result<(), String> {
+    let path = SavingsTracker::settings_path();
+    let mut settings = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    settings
+        .as_object_mut()
+        .ok_or("filter settings is not an object")?
+        .insert("autoApprove".to_string(), serde_json::json!(enabled));
+    let content = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("failed to serialize: {e}"))?;
+    paths::write_atomic(&path, &content)
+}
+
 #[tauri::command]
 pub fn enable_optimizer() -> Result<(), String> {
     // 1. Ensure data directories exist

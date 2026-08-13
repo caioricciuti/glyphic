@@ -94,6 +94,23 @@
     }
   }
 
+  let autoApprove = $state(true);
+
+  async function loadAutoApprove() {
+    try {
+      autoApprove = await api.tokenSavings.getAutoApprove();
+    } catch { /* default stays true */ }
+  }
+
+  async function toggleAutoApprove() {
+    try {
+      await api.tokenSavings.setAutoApprove(!autoApprove);
+      autoApprove = !autoApprove;
+    } catch (e) {
+      console.error("Failed to update auto-approve:", e);
+    }
+  }
+
   async function refreshData() {
     loading = true;
     try {
@@ -147,6 +164,7 @@
 
   onMount(() => {
     refreshData();
+    loadAutoApprove();
   });
 </script>
 
@@ -165,6 +183,15 @@
         </div>
       </div>
       <div class="flex items-center gap-2">
+        {#if isEnabled}
+          <label
+            class="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-xs text-text-secondary cursor-pointer hover:bg-bg-hover transition-colors"
+            title="On: rewritten Bash commands skip Claude Code's permission prompt (historical behavior). Off: commands are still filtered for token savings, but the normal permission flow applies."
+          >
+            <input type="checkbox" class="accent-accent" checked={autoApprove} onchange={toggleAutoApprove} />
+            Auto-approve Bash
+          </label>
+        {/if}
         <button
           type="button"
           class="flex items-center justify-center w-9 h-9 rounded-lg border border-border text-text-secondary hover:bg-bg-hover hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"

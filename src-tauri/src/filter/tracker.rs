@@ -60,6 +60,23 @@ impl SavingsTracker {
         Self::data_dir().join("bin").join("glyphic-filter")
     }
 
+    /// Path to the optimizer behavior settings file.
+    pub fn settings_path() -> PathBuf {
+        Self::data_dir().join("filter-settings.json")
+    }
+
+    /// Whether the hook may auto-approve rewritten Bash commands. Defaults to
+    /// true (the historical behavior). When false, the hook still rewrites the
+    /// command for output filtering but leaves the permission decision to
+    /// Claude Code's normal flow.
+    pub fn auto_approve() -> bool {
+        std::fs::read_to_string(Self::settings_path())
+            .ok()
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+            .and_then(|v| v.get("autoApprove").and_then(|b| b.as_bool()))
+            .unwrap_or(true)
+    }
+
     /// Record a savings event. Appends a JSON line to savings.jsonl.
     pub fn record(
         cmd: &str,

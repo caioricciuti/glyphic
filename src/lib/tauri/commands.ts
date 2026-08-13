@@ -200,6 +200,9 @@ export const api = {
     status: () => invoke<OptimizerStatus>("get_optimizer_status"),
     enable: () => invoke<void>("enable_optimizer"),
     disable: () => invoke<void>("disable_optimizer"),
+    getAutoApprove: () => invoke<boolean>("get_optimizer_auto_approve"),
+    setAutoApprove: (enabled: boolean) =>
+      invoke<void>("set_optimizer_auto_approve", { enabled }),
     savings: (period?: string, projectPath?: string) =>
       invoke<SavingsData>("get_savings_data", {
         period: period ?? "daily",

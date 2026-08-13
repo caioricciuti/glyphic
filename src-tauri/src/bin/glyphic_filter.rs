@@ -90,16 +90,20 @@ fn handle_bash_hook(tool_input: Option<&serde_json::Value>) {
     let encoded = base64::engine::general_purpose::STANDARD.encode(command);
     let rewritten = format!(r#""{bin_str}" exec --b64 {encoded}"#);
 
-    let response = serde_json::json!({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
-            "permissionDecisionReason": "glyphic-filter: wrapping command for token optimization",
-            "updatedInput": {
-                "command": rewritten
-            }
+    let mut hook_output = serde_json::json!({
+        "hookEventName": "PreToolUse",
+        "updatedInput": {
+            "command": rewritten
         }
     });
+    // Without a permissionDecision, Claude Code's normal permission flow
+    // still applies to the rewritten command.
+    if filter::tracker::SavingsTracker::auto_approve() {
+        hook_output["permissionDecision"] = serde_json::json!("allow");
+        hook_output["permissionDecisionReason"] =
+            serde_json::json!("glyphic-filter: wrapping command for token optimization");
+    }
+    let response = serde_json::json!({ "hookSpecificOutput": hook_output });
     println!("{}", serde_json::to_string(&response).unwrap());
 }
 

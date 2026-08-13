@@ -205,6 +205,8 @@ pub fn run() {
             // Token Savings
             commands::token_savings::get_optimizer_status,
             commands::token_savings::enable_optimizer,
+            commands::token_savings::get_optimizer_auto_approve,
+            commands::token_savings::set_optimizer_auto_approve,
             commands::token_savings::disable_optimizer,
             commands::token_savings::get_savings_data,
             commands::token_savings::discover_opportunities,
