@@ -72,6 +72,13 @@ fn handle_hook() {
 
 /// Bash hook: wrap command through glyphic-filter exec for output filtering.
 fn handle_bash_hook(tool_input: Option<&serde_json::Value>) {
+    // exec runs commands through `sh`, which Windows doesn't provide: never
+    // rewrite there, let commands run untouched
+    if cfg!(windows) {
+        print_allow();
+        return;
+    }
+
     let command = tool_input
         .and_then(|ti| ti.get("command"))
         .and_then(|c| c.as_str())
@@ -364,7 +371,7 @@ fn handle_exec(args: &[String]) {
             };
 
             // Apply filter
-            let (filtered, original_len, filtered_len) =
+            let (filtered, _original_len, _filtered_len) =
                 filter::filter_output(&command, &combined);
 
             // Log savings (best-effort, don't fail on tracking errors)
@@ -372,10 +379,10 @@ fn handle_exec(args: &[String]) {
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_default();
 
-            let _ = filter::tracker::SavingsTracker::record(
+            let _ = filter::tracker::SavingsTracker::record_with_texts(
                 &command,
-                original_len,
-                filtered_len,
+                &combined,
+                &filtered,
                 elapsed_ms,
                 &project,
                 "Bash",

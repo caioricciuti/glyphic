@@ -77,7 +77,42 @@ impl SavingsTracker {
             .unwrap_or(true)
     }
 
-    /// Record a savings event. Appends a JSON line to savings.jsonl.
+    /// Create the data dir and keep it private (0700): savings logs and the
+    /// context database can contain command output with secrets in it.
+    pub fn ensure_data_dir() -> Result<PathBuf, String> {
+        let dir = Self::data_dir();
+        fs::create_dir_all(&dir).map_err(|e| format!("failed to create data dir: {e}"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
+        }
+        Ok(dir)
+    }
+
+    /// Record a savings event with the actual texts, so token estimates are
+    /// content-aware instead of bytes/4.
+    pub fn record_with_texts(
+        cmd: &str,
+        input: &str,
+        output: &str,
+        time_ms: u64,
+        project: &str,
+        tool_type: &str,
+    ) -> Result<(), String> {
+        Self::record_inner(
+            cmd,
+            input.len(),
+            output.len(),
+            crate::filter::estimate_tokens_text(input),
+            crate::filter::estimate_tokens_text(output),
+            time_ms,
+            project,
+            tool_type,
+        )
+    }
+
+    /// Record a savings event from byte counts alone (texts unavailable).
     pub fn record(
         cmd: &str,
         input_bytes: usize,
@@ -86,13 +121,34 @@ impl SavingsTracker {
         project: &str,
         tool_type: &str,
     ) -> Result<(), String> {
-        let dir = Self::data_dir();
-        fs::create_dir_all(&dir).map_err(|e| format!("failed to create data dir: {e}"))?;
+        Self::record_inner(
+            cmd,
+            input_bytes,
+            output_bytes,
+            estimate_tokens(input_bytes),
+            estimate_tokens(output_bytes),
+            time_ms,
+            project,
+            tool_type,
+        )
+    }
 
-        let input_tokens = estimate_tokens(input_bytes);
-        let output_tokens = estimate_tokens(output_bytes);
+    #[allow(clippy::too_many_arguments)]
+    fn record_inner(
+        cmd: &str,
+        input_bytes: usize,
+        output_bytes: usize,
+        input_tokens: u64,
+        output_tokens: u64,
+        time_ms: u64,
+        project: &str,
+        tool_type: &str,
+    ) -> Result<(), String> {
+        Self::ensure_data_dir()?;
+        // saturating: a filter can legitimately produce output longer than
+        // the input (markers, headers), which must not underflow
         let savings_pct = if input_bytes > 0 {
-            ((input_bytes - output_bytes) as f64 / input_bytes as f64) * 100.0
+            (input_bytes.saturating_sub(output_bytes)) as f64 / input_bytes as f64 * 100.0
         } else {
             0.0
         };

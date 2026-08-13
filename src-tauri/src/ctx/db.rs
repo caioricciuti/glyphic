@@ -73,6 +73,16 @@ impl Db {
         Ok(db)
     }
 
+    /// Test-only: fully migrated in-memory database. Keeps unit tests off the
+    /// real `~/.glyphic/ctx.db` and away from the filesystem entirely.
+    #[cfg(test)]
+    pub(crate) fn open_in_memory() -> rusqlite::Result<Self> {
+        let conn = Connection::open_in_memory()?;
+        let db = Self { conn };
+        db.migrate()?;
+        Ok(db)
+    }
+
     fn migrate(&self) -> rusqlite::Result<()> {
         self.conn.execute_batch(
             r#"
@@ -155,8 +165,14 @@ impl Db {
                 r.dedup_key, emb_blob,
             ],
         )?;
+        // FTS5 has no PK on the UNINDEXED id column, so INSERT OR REPLACE
+        // would stack duplicate rows for the same id. Scrub first.
         self.conn.execute(
-            "INSERT OR REPLACE INTO tool_results_fts (id, content, summary) VALUES (?1, ?2, ?3)",
+            "DELETE FROM tool_results_fts WHERE id = ?1",
+            params![r.id],
+        )?;
+        self.conn.execute(
+            "INSERT INTO tool_results_fts (id, content, summary) VALUES (?1, ?2, ?3)",
             params![r.id, r.content, r.summary],
         )?;
         Ok(())
@@ -169,8 +185,10 @@ impl Db {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![t.id, t.session, t.ts as i64, t.role, t.content, t.project, emb_blob],
         )?;
+        // Same duplicate-row hazard as tool_results_fts: scrub by id first.
+        self.conn.execute("DELETE FROM turns_fts WHERE id = ?1", params![t.id])?;
         self.conn.execute(
-            "INSERT OR REPLACE INTO turns_fts (id, content) VALUES (?1, ?2)",
+            "INSERT INTO turns_fts (id, content) VALUES (?1, ?2)",
             params![t.id, t.content],
         )?;
         Ok(())
@@ -677,4 +695,483 @@ fn sanitize_fts_query(raw: &str) -> String {
         .map(|t| format!("\"{t}\""))
         .collect::<Vec<_>>()
         .join(" OR ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mem_db() -> Db {
+        Db::open_in_memory().expect("open in-memory db")
+    }
+
+    fn make_tr(
+        id: &str,
+        session: &str,
+        project: &str,
+        ts: u64,
+        content: &str,
+        dedup: Option<&str>,
+    ) -> ToolResult {
+        ToolResult {
+            id: id.to_string(),
+            session: session.to_string(),
+            ts,
+            tool: "Bash".to_string(),
+            args_summary: format!("args-{id}"),
+            content: content.to_string(),
+            summary: content.to_string(),
+            size_bytes: content.len() as i64,
+            line_count: content.lines().count() as i64,
+            project: project.to_string(),
+            dedup_key: dedup.map(str::to_string),
+        }
+    }
+
+    fn make_turn(id: &str, session: &str, project: &str, ts: u64, content: &str) -> Turn {
+        Turn {
+            id: id.to_string(),
+            session: session.to_string(),
+            ts,
+            role: "user".to_string(),
+            content: content.to_string(),
+            project: project.to_string(),
+        }
+    }
+
+    fn table_count(db: &Db, table: &str) -> i64 {
+        db.conn
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap()
+    }
+
+    // ── schema ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn migrate_creates_all_tables_and_is_idempotent() {
+        let db = mem_db();
+        // Running the migration again must not error (ALTER TABLE guards).
+        db.migrate().expect("second migrate");
+
+        let mut stmt = db
+            .conn
+            .prepare("SELECT name FROM sqlite_master WHERE type IN ('table','index') ORDER BY name")
+            .unwrap();
+        let names: Vec<String> = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect();
+        for expected in [
+            "tool_results",
+            "turns",
+            "tool_results_fts",
+            "turns_fts",
+            "sessions_summary",
+            "idx_tr_session_ts",
+            "idx_tr_project_ts",
+            "idx_tr_dedup",
+            "idx_turns_session_ts",
+            "idx_turns_project_ts",
+        ] {
+            assert!(names.iter().any(|n| n == expected), "missing {expected}");
+        }
+        // Migration must have added the late columns.
+        let cols: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('tool_results') WHERE name IN ('dedup_key','embedding')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cols, 2);
+    }
+
+    // ── insert / read roundtrip ────────────────────────────────────────────
+
+    #[test]
+    fn tool_result_roundtrip_preserves_all_fields() {
+        let db = mem_db();
+        let r = make_tr("tr_1", "sess-a", "proj-x", 1234, "hello roundtrip world", Some("key-1"));
+        let emb = [0.25f32, -1.5, 3.0];
+        db.insert_tool_result(&r, Some(&emb)).unwrap();
+
+        let got = db.get_tool_result("tr_1").unwrap().expect("row present");
+        assert_eq!(got.id, "tr_1");
+        assert_eq!(got.session, "sess-a");
+        assert_eq!(got.ts, 1234);
+        assert_eq!(got.tool, "Bash");
+        assert_eq!(got.args_summary, "args-tr_1");
+        assert_eq!(got.content, "hello roundtrip world");
+        assert_eq!(got.summary, "hello roundtrip world");
+        assert_eq!(got.size_bytes, r.content.len() as i64);
+        assert_eq!(got.line_count, 1);
+        assert_eq!(got.project, "proj-x");
+        assert_eq!(got.dedup_key.as_deref(), Some("key-1"));
+
+        // Embedding blob survives encode → store → decode.
+        let blob: Vec<u8> = db
+            .conn
+            .query_row("SELECT embedding FROM tool_results WHERE id = 'tr_1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(embed::decode(&blob).unwrap(), emb.to_vec());
+    }
+
+    #[test]
+    fn turn_roundtrip_preserves_all_fields() {
+        let db = mem_db();
+        let t = make_turn("tn_1", "sess-a", "proj-x", 99, "what is the plan");
+        db.insert_turn(&t, None).unwrap();
+        let got = db.get_turn("tn_1").unwrap().expect("row present");
+        assert_eq!(got.id, "tn_1");
+        assert_eq!(got.session, "sess-a");
+        assert_eq!(got.ts, 99);
+        assert_eq!(got.role, "user");
+        assert_eq!(got.content, "what is the plan");
+        assert_eq!(got.project, "proj-x");
+    }
+
+    #[test]
+    fn get_missing_rows_return_none() {
+        let db = mem_db();
+        assert!(db.get_tool_result("nope").unwrap().is_none());
+        assert!(db.get_turn("nope").unwrap().is_none());
+    }
+
+    // ── dedup_key ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn dedup_key_deletes_previous_rows_before_insert() {
+        let db = mem_db();
+        db.insert_tool_result(
+            &make_tr("tr_old", "s1", "p", 1, "olduniquetoken content", Some("read:/tmp/f")),
+            None,
+        )
+        .unwrap();
+        db.insert_tool_result(
+            &make_tr("tr_new", "s1", "p", 2, "newuniquetoken content", Some("read:/tmp/f")),
+            None,
+        )
+        .unwrap();
+
+        assert!(db.get_tool_result("tr_old").unwrap().is_none(), "old row must be gone");
+        assert!(db.get_tool_result("tr_new").unwrap().is_some());
+        assert_eq!(table_count(&db, "tool_results"), 1);
+        // FTS side scrubbed too: the old token no longer matches anything.
+        assert!(db.search("olduniquetoken", None, None, 10).unwrap().is_empty());
+        let hits = db.search("newuniquetoken", None, None, 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "tr_new");
+    }
+
+    #[test]
+    fn rows_without_dedup_key_accumulate() {
+        let db = mem_db();
+        db.insert_tool_result(&make_tr("tr_a", "s1", "p", 1, "alpha", None), None).unwrap();
+        db.insert_tool_result(&make_tr("tr_b", "s1", "p", 2, "alpha", None), None).unwrap();
+        assert_eq!(table_count(&db, "tool_results"), 2);
+    }
+
+    #[test]
+    fn reinserting_same_id_leaves_single_fts_row() {
+        let db = mem_db();
+        let r = make_tr("tr_same", "s1", "p", 1, "repeatable token", None);
+        db.insert_tool_result(&r, None).unwrap();
+        db.insert_tool_result(&r, None).unwrap();
+        assert_eq!(table_count(&db, "tool_results"), 1);
+        assert_eq!(table_count(&db, "tool_results_fts"), 1);
+        let hits = db.search("repeatable", None, None, 10).unwrap();
+        assert_eq!(hits.len(), 1, "duplicate FTS rows would duplicate hits");
+
+        let t = make_turn("tn_same", "s1", "p", 1, "turnrepeat token");
+        db.insert_turn(&t, None).unwrap();
+        db.insert_turn(&t, None).unwrap();
+        assert_eq!(table_count(&db, "turns_fts"), 1);
+    }
+
+    // ── FTS search ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn search_returns_matching_tool_and_turn_rows() {
+        let db = mem_db();
+        db.insert_tool_result(
+            &make_tr("tr_pg", "s1", "p", 1, "postgres vacuum finished successfully", None),
+            None,
+        )
+        .unwrap();
+        db.insert_tool_result(&make_tr("tr_js", "s1", "p", 2, "eslint passed cleanly", None), None)
+            .unwrap();
+        db.insert_turn(&make_turn("tn_pg", "s2", "p", 3, "please vacuum the postgres table"), None)
+            .unwrap();
+
+        let hits = db.search("postgres vacuum", None, None, 10).unwrap();
+        let ids: Vec<&str> = hits.iter().map(|h| h.id.as_str()).collect();
+        assert!(ids.contains(&"tr_pg"));
+        assert!(ids.contains(&"tn_pg"));
+        assert!(!ids.contains(&"tr_js"));
+
+        let tool_hit = hits.iter().find(|h| h.id == "tr_pg").unwrap();
+        assert_eq!(tool_hit.kind, "tool");
+        assert_eq!(tool_hit.tool.as_deref(), Some("Bash"));
+        assert_eq!(tool_hit.preview, "postgres vacuum finished successfully");
+        let turn_hit = hits.iter().find(|h| h.id == "tn_pg").unwrap();
+        assert_eq!(turn_hit.kind, "turn");
+        assert!(turn_hit.tool.is_none());
+    }
+
+    #[test]
+    fn search_scopes_by_project() {
+        let db = mem_db();
+        db.insert_tool_result(&make_tr("tr_p1", "s1", "proj-one", 1, "shared needle", None), None)
+            .unwrap();
+        db.insert_tool_result(&make_tr("tr_p2", "s1", "proj-two", 2, "shared needle", None), None)
+            .unwrap();
+        let hits = db.search("needle shared", Some("proj-one"), None, 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "tr_p1");
+    }
+
+    #[test]
+    fn search_excludes_active_session_rows() {
+        let db = mem_db();
+        db.insert_tool_result(&make_tr("tr_cur", "sess-cur", "p", 1, "sessionscoped needle", None), None)
+            .unwrap();
+        db.insert_tool_result(&make_tr("tr_other", "sess-old", "p", 2, "sessionscoped needle", None), None)
+            .unwrap();
+        db.insert_turn(&make_turn("tn_cur", "sess-cur", "p", 3, "sessionscoped needle turn"), None)
+            .unwrap();
+        db.insert_turn(&make_turn("tn_other", "sess-old", "p", 4, "sessionscoped needle turn"), None)
+            .unwrap();
+
+        let hits = db.search("sessionscoped needle", None, Some("sess-cur"), 10).unwrap();
+        let ids: Vec<&str> = hits.iter().map(|h| h.id.as_str()).collect();
+        assert_eq!(ids, vec!["tr_other", "tn_other"]);
+    }
+
+    #[test]
+    fn search_with_useless_query_returns_empty() {
+        let db = mem_db();
+        db.insert_tool_result(&make_tr("tr_x", "s", "p", 1, "content here", None), None).unwrap();
+        // Stopwords and short tokens only → sanitized to empty → no results.
+        assert!(db.search("the and for it a", None, None, 10).unwrap().is_empty());
+        assert!(db.search("!!! ???", None, None, 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn search_truncates_to_limit() {
+        let db = mem_db();
+        for i in 0..6 {
+            db.insert_tool_result(
+                &make_tr(&format!("tr_{i}"), "s", "p", i as u64, "limited needle row", None),
+                None,
+            )
+            .unwrap();
+        }
+        assert_eq!(db.search("limited needle", None, None, 3).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn turn_preview_is_capped_at_240_chars_and_multibyte_safe() {
+        let db = mem_db();
+        let long = format!("previewtoken {}", "é".repeat(300));
+        db.insert_turn(&make_turn("tn_long", "s", "p", 1, &long), None).unwrap();
+        let hits = db.search("previewtoken", None, None, 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].preview.chars().count(), 240);
+        assert_eq!(hits[0].preview, first_n_chars(&long, 240));
+    }
+
+    // ── sanitize_fts_query ─────────────────────────────────────────────────
+
+    #[test]
+    fn sanitize_drops_stopwords_short_tokens_and_punctuation() {
+        assert_eq!(
+            sanitize_fts_query("Fix the DB-connection bug now!"),
+            "\"fix\" OR \"connection\" OR \"bug\" OR \"now\""
+        );
+        assert_eq!(sanitize_fts_query("the and for with"), "");
+        assert_eq!(sanitize_fts_query("a b c"), "");
+        assert_eq!(sanitize_fts_query(""), "");
+    }
+
+    #[test]
+    fn sanitize_caps_token_count_at_twelve() {
+        let raw = (0..20).map(|i| format!("token{i:02}")).collect::<Vec<_>>().join(" ");
+        let q = sanitize_fts_query(&raw);
+        assert_eq!(q.split(" OR ").count(), 12);
+        assert!(q.starts_with("\"token00\""));
+    }
+
+    // ── hybrid search / rerank ─────────────────────────────────────────────
+
+    #[test]
+    fn hybrid_without_query_embedding_matches_bm25_search() {
+        let db = mem_db();
+        db.insert_tool_result(&make_tr("tr_1", "s", "p", 1, "hybrid needle one", None), None).unwrap();
+        db.insert_tool_result(&make_tr("tr_2", "s", "p", 2, "hybrid needle two", None), None).unwrap();
+        let plain: Vec<String> = db
+            .search("hybrid needle", None, None, 10)
+            .unwrap()
+            .into_iter()
+            .map(|h| h.id)
+            .collect();
+        let hybrid: Vec<String> = db
+            .search_hybrid("hybrid needle", None, None, None, 30, 10)
+            .unwrap()
+            .into_iter()
+            .map(|h| h.id)
+            .collect();
+        assert_eq!(plain, hybrid);
+    }
+
+    #[test]
+    fn hybrid_reranks_by_cosine_and_scores_missing_embeddings_zero() {
+        let db = mem_db();
+        let ea = [0.9f32, 0.1, 0.0, 0.0];
+        let eb = [0.0f32, 1.0, 0.0, 0.0];
+        db.insert_tool_result(&make_tr("tr_a", "s", "p", 1, "rerank shared token", None), Some(&ea))
+            .unwrap();
+        db.insert_tool_result(&make_tr("tr_b", "s", "p", 2, "rerank shared token", None), Some(&eb))
+            .unwrap();
+        db.insert_tool_result(&make_tr("tr_none", "s", "p", 3, "rerank shared token", None), None)
+            .unwrap();
+
+        let q = [0.0f32, 1.0, 0.0, 0.0];
+        let ids: Vec<String> = db
+            .search_hybrid("rerank shared", Some(&q), None, None, 30, 10)
+            .unwrap()
+            .into_iter()
+            .map(|h| h.id)
+            .collect();
+        // tr_b: cos = 1.0; tr_a: cos ≈ 0.11; tr_none: no embedding → 0.0
+        assert_eq!(ids, vec!["tr_b", "tr_a", "tr_none"]);
+    }
+
+    #[test]
+    fn hybrid_respects_limit_and_session_exclusion() {
+        let db = mem_db();
+        let e = [1.0f32, 0.0];
+        for i in 0..5 {
+            db.insert_tool_result(
+                &make_tr(&format!("tr_{i}"), "sess-cur", "p", i as u64, "hybscope needle", None),
+                Some(&e),
+            )
+            .unwrap();
+        }
+        db.insert_tool_result(&make_tr("tr_keep", "sess-old", "p", 9, "hybscope needle", None), Some(&e))
+            .unwrap();
+        let hits = db
+            .search_hybrid("hybscope needle", Some(&e), None, Some("sess-cur"), 30, 3)
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "tr_keep");
+    }
+
+    // ── embedding backfill plumbing ────────────────────────────────────────
+
+    #[test]
+    fn rows_needing_embedding_and_updates_drive_counts() {
+        let db = mem_db();
+        let e = [0.5f32, 0.5];
+        db.insert_tool_result(&make_tr("tr_has", "s", "p", 1, "embedded row", None), Some(&e)).unwrap();
+        db.insert_tool_result(&make_tr("tr_miss", "s", "p", 2, "bare row", None), None).unwrap();
+        db.insert_turn(&make_turn("tn_has", "s", "p", 3, "embedded turn"), Some(&e)).unwrap();
+        db.insert_turn(&make_turn("tn_miss", "s", "p", 4, "bare turn"), None).unwrap();
+
+        let c = db.embedded_counts().unwrap();
+        assert_eq!((c.tool_results_total, c.tool_results_embedded), (2, 1));
+        assert_eq!((c.turns_total, c.turns_embedded), (2, 1));
+
+        let todo = db.rows_needing_embedding(10).unwrap();
+        assert_eq!(todo.len(), 2);
+        assert!(todo.iter().any(|r| r.kind == EmbedKind::ToolResult && r.id == "tr_miss" && r.text == "bare row"));
+        assert!(todo.iter().any(|r| r.kind == EmbedKind::Turn && r.id == "tn_miss" && r.text == "bare turn"));
+
+        // Batch smaller than the tool-result backlog never reaches turns.
+        let todo_one = db.rows_needing_embedding(1).unwrap();
+        assert_eq!(todo_one.len(), 1);
+        assert_eq!(todo_one[0].kind, EmbedKind::ToolResult);
+
+        db.update_tool_result_embedding("tr_miss", &e).unwrap();
+        db.update_turn_embedding("tn_miss", &e).unwrap();
+        assert!(db.rows_needing_embedding(10).unwrap().is_empty());
+        let c2 = db.embedded_counts().unwrap();
+        assert_eq!((c2.tool_results_embedded, c2.turns_embedded), (2, 2));
+    }
+
+    // ── purge / stats / recency ────────────────────────────────────────────
+
+    #[test]
+    fn purge_removes_skip_listed_and_json_envelope_rows() {
+        let db = mem_db();
+        db.insert_tool_result(&make_tr("tr_read", "s", "p", 1, "purgeread payload", None), None).unwrap();
+        db.conn
+            .execute("UPDATE tool_results SET tool = 'Read' WHERE id = 'tr_read'", [])
+            .unwrap();
+        db.insert_tool_result(
+            &make_tr("tr_json", "s", "p", 2, "{\"raw\": \"jsonenvelope\"}", None),
+            None,
+        )
+        .unwrap();
+        db.insert_tool_result(&make_tr("tr_clean", "s", "p", 3, "cleanrow survives", None), None).unwrap();
+
+        let deleted = db.purge_legacy_tool_results(&["Read", "TodoWrite"]).unwrap();
+        assert_eq!(deleted, 2);
+        assert!(db.get_tool_result("tr_read").unwrap().is_none());
+        assert!(db.get_tool_result("tr_json").unwrap().is_none());
+        assert!(db.get_tool_result("tr_clean").unwrap().is_some());
+        // FTS index scrubbed alongside.
+        assert!(db.search("purgeread", None, None, 10).unwrap().is_empty());
+        assert!(db.search("jsonenvelope", None, None, 10).unwrap().is_empty());
+        assert_eq!(db.search("cleanrow", None, None, 10).unwrap().len(), 1);
+
+        // Empty skip list still purges envelopes, and is a no-op here.
+        assert_eq!(db.purge_legacy_tool_results(&[]).unwrap(), 0);
+    }
+
+    #[test]
+    fn stats_counts_rows_and_sums_bytes() {
+        let db = mem_db();
+        let s = db.stats().unwrap();
+        assert_eq!((s.tool_results, s.turns, s.bytes_stored), (0, 0, 0));
+
+        db.insert_tool_result(&make_tr("tr_1", "s", "p", 1, "12345", None), None).unwrap();
+        db.insert_tool_result(&make_tr("tr_2", "s", "p", 2, "1234567890", None), None).unwrap();
+        db.insert_turn(&make_turn("tn_1", "s", "p", 3, "turn"), None).unwrap();
+        let s = db.stats().unwrap();
+        assert_eq!(s.tool_results, 2);
+        assert_eq!(s.turns, 1);
+        assert_eq!(s.bytes_stored, 15);
+    }
+
+    #[test]
+    fn recent_tool_results_orders_by_ts_desc_and_filters_project() {
+        let db = mem_db();
+        db.insert_tool_result(&make_tr("tr_1", "s", "pa", 10, "one", None), None).unwrap();
+        db.insert_tool_result(&make_tr("tr_2", "s", "pa", 30, "two", None), None).unwrap();
+        db.insert_tool_result(&make_tr("tr_3", "s", "pb", 20, "three", None), None).unwrap();
+
+        let all: Vec<String> = db.recent_tool_results(None, 10).unwrap().into_iter().map(|r| r.id).collect();
+        assert_eq!(all, vec!["tr_2", "tr_3", "tr_1"]);
+
+        let pa: Vec<String> = db.recent_tool_results(Some("pa"), 10).unwrap().into_iter().map(|r| r.id).collect();
+        assert_eq!(pa, vec!["tr_2", "tr_1"]);
+
+        assert_eq!(db.recent_tool_results(None, 1).unwrap().len(), 1);
+    }
+
+    // ── small helpers ──────────────────────────────────────────────────────
+
+    #[test]
+    fn first_n_chars_is_char_not_byte_based() {
+        assert_eq!(first_n_chars("héllo wörld", 5), "héllo");
+        assert_eq!(first_n_chars("abc", 10), "abc");
+        assert_eq!(first_n_chars("", 3), "");
+    }
+
+    #[test]
+    fn now_ts_is_positive() {
+        assert!(now_ts() > 0);
+    }
 }

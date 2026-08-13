@@ -149,9 +149,14 @@ pub fn set_optimizer_auto_approve(enabled: bool) -> Result<(), String> {
 
 #[tauri::command]
 pub fn enable_optimizer() -> Result<(), String> {
-    // 1. Ensure data directories exist
-    let data_dir = SavingsTracker::data_dir();
-    let bin_dir = data_dir.join("bin");
+    if cfg!(windows) {
+        return Err("The token optimizer needs macOS or Linux: filtered commands run through `sh`, which Windows doesn't provide.".to_string());
+    }
+
+    // 1. Ensure data directories exist (kept private: logs can contain
+    // command output with secrets)
+    SavingsTracker::ensure_data_dir()?;
+    let bin_dir = SavingsTracker::data_dir().join("bin");
     std::fs::create_dir_all(&bin_dir)
         .map_err(|e| format!("failed to create ~/.glyphic/bin: {e}"))?;
 

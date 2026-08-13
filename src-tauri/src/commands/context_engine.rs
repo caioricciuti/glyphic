@@ -173,11 +173,21 @@ pub fn ctx_purge_legacy() -> Result<PurgeReport, String> {
 
 #[tauri::command]
 pub fn ctx_enable() -> Result<(), String> {
-    // 1. Install binary
+    if cfg!(windows) {
+        return Err("The Context Engine needs macOS or Linux: its hooks run through `bash`, which Windows doesn't provide.".to_string());
+    }
+
+    // 1. Install binary (data dir kept private: it stores tool output that
+    // can contain secrets)
     let data_dir = config::data_dir();
     let bin_dir = data_dir.join("bin");
     std::fs::create_dir_all(&bin_dir)
         .map_err(|e| format!("failed to create ~/.glyphic/bin: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&data_dir, std::fs::Permissions::from_mode(0o700));
+    }
 
     let target_bin = config::bin_path();
     let source_bin = find_sidecar_source()?;

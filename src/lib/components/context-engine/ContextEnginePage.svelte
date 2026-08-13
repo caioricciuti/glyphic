@@ -46,11 +46,19 @@
 
   const visibleResults = $derived(showAllResults ? recent : recent.slice(0, 15));
 
+  // Claude Code's native auto memory also injects context each session; when
+  // both are on, flag it so injected-context growth isn't a surprise
+  let nativeAutoMemory = $state(false);
+
   async function load() {
     try {
       status = await api.contextEngine.status();
       recent = await api.contextEngine.recentToolResults(undefined, 50);
       error = null;
+      try {
+        const settings = await api.settings.read("global");
+        nativeAutoMemory = settings.autoMemoryEnabled === true;
+      } catch { /* note stays hidden */ }
     } catch (e) {
       error = String(e);
     } finally {
@@ -222,6 +230,14 @@
     {#if error}
       <div class="p-4 rounded-lg border border-error/40 bg-error/10 text-error text-sm">
         {error}
+      </div>
+    {/if}
+
+    {#if enabled && nativeAutoMemory}
+      <div class="p-3 rounded-lg border border-info/30 bg-info/5 text-xs text-text-secondary">
+        Claude Code's native auto memory is also enabled. They complement each other
+        (auto memory carries curated facts, the Context Engine retrieves session history),
+        but both inject context each turn, so keep an eye on session size.
       </div>
     {/if}
 
