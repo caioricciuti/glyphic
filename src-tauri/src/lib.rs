@@ -183,6 +183,8 @@ pub fn run() {
             commands::sessions::set_session_tag,
             commands::sessions::export_session_markdown,
             commands::sessions::detect_live_sessions,
+            commands::sessions::resume_session,
+            commands::sessions::delete_session,
             // Terminal PTY
             pty::spawn_terminal,
             pty::write_terminal,

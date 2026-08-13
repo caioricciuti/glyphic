@@ -4,8 +4,8 @@
   import type { SettingsScope } from "$lib/types";
   import ProjectPicker from "$lib/components/shared/ProjectPicker.svelte";
   import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
-  import { getSelectedProjectPath } from "$lib/stores/project-context.svelte";
-  import { Server, Plus, Cloud, Terminal, Globe, Trash2, Edit3, X, LayoutGrid } from "lucide-svelte";
+  import { getSelectedProjectPath, getProjects, isLoaded, loadProjects } from "$lib/stores/project-context.svelte";
+  import { Server, Plus, Cloud, Terminal, Globe, Trash2, Edit3, X, LayoutGrid, ArrowRightLeft, Copy, FolderOpen } from "lucide-svelte";
   import TemplateGallery from "$lib/components/shared/TemplateGallery.svelte";
 
   interface ServerEntry {
@@ -33,6 +33,9 @@
   let deletingServerName = $state<string | null>(null);
   let galleryOpen = $state(false);
 
+  // Bulk selection
+  let selectedNames = $state<Set<string>>(new Set());
+
   const projectPath = $derived(getSelectedProjectPath());
   const needsProject = $derived(scope === "project" || scope === "mcp-local");
   const scopeLabel: Record<string, string> = {
@@ -41,6 +44,28 @@
     "mcp-local": "Project (.mcp.json)",
     "project": "Project (.claude/settings.json)",
   };
+
+  // Move / copy to another place (one server or a bulk selection)
+  let movingServers = $state<ServerEntry[]>([]);
+  let destScope = $state<SettingsScope>("global");
+  let destProjectPath = $state("");
+  let destProjectSearch = $state("");
+  let destShowCustomPath = $state(false);
+  let transferring = $state(false);
+  let transferError = $state<string | null>(null);
+
+  const destNeedsProject = $derived(destScope === "project" || destScope === "mcp-local");
+  const destProjects = $derived(
+    getProjects().filter((p) => {
+      if (!destProjectSearch) return true;
+      return p.path.toLowerCase().includes(destProjectSearch.toLowerCase());
+    }),
+  );
+  const isSameDestination = $derived(
+    movingServers.length > 0 &&
+      destScope === scope &&
+      (destNeedsProject ? destProjectPath : "") === (needsProject ? (projectPath ?? "") : ""),
+  );
 
   async function loadServers() {
     if (needsProject && !projectPath) { loading = false; servers = []; return; }
@@ -115,11 +140,85 @@
       await api.mcp.delete(scope, name, pp);
       await loadServers();
       if (editing?.name === name) editing = null;
+      if (selectedNames.has(name)) {
+        const next = new Set(selectedNames);
+        next.delete(name);
+        selectedNames = next;
+      }
     } catch (e) {
       console.error("Failed:", e);
     } finally {
       deletingServerName = null;
     }
+  }
+
+  function toggleSelectServer(name: string) {
+    const next = new Set(selectedNames);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    selectedNames = next;
+  }
+
+  function clearSelection() {
+    selectedNames = new Set();
+  }
+
+  function openMoveDialogFor(entries: ServerEntry[]) {
+    if (entries.length === 0) return;
+    movingServers = entries;
+    // Default destination to a different scope than the source so the
+    // dialog doesn't open pre-aimed at a no-op transfer.
+    destScope = scope === "global" ? "desktop" : "global";
+    destProjectPath = "";
+    destProjectSearch = "";
+    destShowCustomPath = false;
+    transferError = null;
+    if (!isLoaded()) loadProjects();
+  }
+
+  function openMoveDialog(server: ServerEntry) {
+    openMoveDialogFor([server]);
+  }
+
+  function openBulkMoveDialog() {
+    openMoveDialogFor(servers.filter((s) => selectedNames.has(s.name)));
+  }
+
+  async function transferServer(mode: "move" | "copy") {
+    if (movingServers.length === 0 || isSameDestination) return;
+    if (destNeedsProject && !destProjectPath.trim()) {
+      transferError = "Pick a destination project";
+      return;
+    }
+    transferring = true;
+    transferError = null;
+    const destPP = destNeedsProject ? destProjectPath.trim() : undefined;
+    const srcPP = needsProject ? projectPath ?? undefined : undefined;
+
+    const results = await Promise.allSettled(
+      movingServers.map(async (s) => {
+        await api.mcp.upsert(destScope, s.name, s.config, destPP);
+        if (mode === "move") {
+          await api.mcp.delete(scope, s.name, srcPP);
+        }
+      }),
+    );
+
+    const failedCount = results.filter((r) => r.status === "rejected").length;
+    const transferredNames = new Set(
+      movingServers.filter((_, i) => results[i].status === "fulfilled").map((s) => s.name),
+    );
+
+    await loadServers();
+    selectedNames = new Set([...selectedNames].filter((n) => !transferredNames.has(n)));
+
+    if (failedCount > 0) {
+      transferError = `${failedCount} of ${movingServers.length} server${movingServers.length === 1 ? "" : "s"} failed to transfer`;
+      movingServers = movingServers.filter((s) => !transferredNames.has(s.name));
+    } else {
+      movingServers = [];
+    }
+    transferring = false;
   }
 
   onMount(loadServers);
@@ -133,6 +232,124 @@
   oncancel={() => (deletingServerName = null)}
 />
 
+{#if movingServers.length > 0}
+  <div class="fixed inset-0 z-50 flex items-center justify-center">
+    <button
+      class="absolute inset-0 bg-black/50"
+      onclick={() => !transferring && (movingServers = [])}
+      aria-label="Close dialog"
+    ></button>
+
+    <div class="relative bg-bg-secondary border border-border rounded-xl shadow-2xl w-[440px] p-6 space-y-4 z-10">
+      <div class="flex items-start justify-between">
+        <div>
+          <h3 class="text-base font-semibold text-text-primary">Move / Copy {movingServers.length === 1 ? "Server" : `${movingServers.length} Servers`}</h3>
+          <p class="text-sm text-text-muted mt-1">
+            {#if movingServers.length === 1}
+              <span class="font-mono text-text-secondary">{movingServers[0].name}</span>
+            {:else}
+              <span class="text-text-secondary">{movingServers.map((s) => s.name).join(", ")}</span>
+            {/if}
+            from <span class="text-text-secondary">{scopeLabel[scope] ?? scope}</span>{#if needsProject && projectPath}
+              <span class="font-mono text-text-secondary"> ({projectPath.split("/").pop()})</span>
+            {/if}
+          </p>
+        </div>
+        <button class="p-1 text-text-muted hover:text-text-primary" onclick={() => (movingServers = [])} aria-label="Close">
+          <X size={16} />
+        </button>
+      </div>
+
+      <div>
+        <span class="text-xs text-text-muted">Destination</span>
+        <div class="flex gap-1 mt-1 bg-bg-tertiary rounded-lg p-1">
+          {#each [{ id: "desktop" as const, label: "Desktop" }, { id: "global" as const, label: "Global" }, { id: "mcp-local" as const, label: "Local" }, { id: "project" as const, label: "Project" }] as tab}
+            <button
+              class="flex-1 px-2 py-1.5 text-xs rounded-md transition-colors {destScope === tab.id ? 'bg-bg-secondary text-text-primary' : 'text-text-muted hover:text-text-secondary'}"
+              onclick={() => { destScope = tab.id; transferError = null; }}
+            >{tab.label}</button>
+          {/each}
+        </div>
+      </div>
+
+      {#if destNeedsProject}
+        <div>
+          <span class="text-xs text-text-muted">Destination project</span>
+          {#if destProjectPath}
+            <div class="flex items-center justify-between mt-1 px-3 py-1.5 bg-bg-tertiary border border-border rounded-md">
+              <span class="text-xs font-mono text-text-primary truncate">{destProjectPath}</span>
+              <button class="text-xs text-accent shrink-0 ml-2" onclick={() => (destProjectPath = "")}>Change</button>
+            </div>
+          {:else}
+            <input
+              type="text"
+              class="w-full mt-1 px-3 py-1.5 text-sm bg-bg-tertiary border border-border rounded-md text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+              placeholder="Search projects..."
+              bind:value={destProjectSearch}
+            />
+            <div class="max-h-40 overflow-y-auto mt-1 border border-border rounded-md">
+              {#each destProjects as project}
+                <button
+                  class="w-full text-left px-3 py-1.5 text-xs hover:bg-bg-hover transition-colors font-mono text-text-secondary truncate block"
+                  onclick={() => (destProjectPath = project.path)}
+                >{project.path}</button>
+              {:else}
+                <p class="px-3 py-2 text-xs text-text-muted">No matching projects</p>
+              {/each}
+            </div>
+            {#if destShowCustomPath}
+              <div class="flex gap-2 mt-1">
+                <input
+                  type="text"
+                  class="flex-1 px-3 py-1.5 text-xs bg-bg-tertiary border border-border rounded-md text-text-primary font-mono focus:outline-none focus:border-accent"
+                  placeholder="/path/to/project"
+                  bind:value={destProjectSearch}
+                  onkeydown={(e) => { if (e.key === "Enter" && destProjectSearch.trim()) destProjectPath = destProjectSearch.trim(); }}
+                />
+                <button class="px-3 py-1.5 text-xs bg-accent hover:bg-accent-hover text-white rounded-md" onclick={() => { if (destProjectSearch.trim()) destProjectPath = destProjectSearch.trim(); }}>Use</button>
+              </div>
+            {:else}
+              <button class="flex items-center gap-1.5 mt-1 text-xs text-text-muted hover:text-text-secondary" onclick={() => (destShowCustomPath = true)}>
+                <FolderOpen size={12} />
+                Enter path manually...
+              </button>
+            {/if}
+          {/if}
+        </div>
+      {/if}
+
+      {#if isSameDestination}
+        <p class="text-xs text-warning">Destination is the same as the source.</p>
+      {/if}
+      {#if transferError}
+        <p class="text-xs text-danger">{transferError}</p>
+      {/if}
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button class="px-4 py-2 text-sm text-text-secondary bg-bg-tertiary hover:bg-bg-hover rounded-lg transition-colors" onclick={() => (movingServers = [])} disabled={transferring}>
+          Cancel
+        </button>
+        <button
+          class="flex items-center gap-1.5 px-4 py-2 text-sm text-text-secondary bg-bg-tertiary hover:bg-bg-hover rounded-lg transition-colors disabled:opacity-50"
+          onclick={() => transferServer("copy")}
+          disabled={transferring || isSameDestination || (destNeedsProject && !destProjectPath.trim())}
+        >
+          <Copy size={14} />
+          {transferring ? "Working..." : "Copy"}
+        </button>
+        <button
+          class="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-accent hover:bg-accent-hover rounded-lg transition-colors disabled:opacity-50"
+          onclick={() => transferServer("move")}
+          disabled={transferring || isSameDestination || (destNeedsProject && !destProjectPath.trim())}
+        >
+          <ArrowRightLeft size={14} />
+          {transferring ? "Working..." : "Move"}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <div class="flex h-full">
   <!-- Main content -->
   <div class="flex-1 overflow-y-auto p-6 space-y-6">
@@ -143,15 +360,26 @@
           {#each [{ id: "desktop" as const, label: "Desktop" }, { id: "global" as const, label: "Global" }, { id: "mcp-local" as const, label: "Local" }, { id: "project" as const, label: "Project" }] as tab}
             <button
               class="px-4 py-1.5 text-sm rounded-md transition-colors {scope === tab.id ? 'bg-bg-secondary text-text-primary' : 'text-text-muted hover:text-text-secondary'}"
-              onclick={() => { scope = tab.id; editing = null; loadServers(); }}
+              onclick={() => { scope = tab.id; editing = null; selectedNames = new Set(); loadServers(); }}
             >{tab.label}</button>
           {/each}
         </div>
         {#if needsProject}
-          <ProjectPicker onselect={loadServers} />
+          <ProjectPicker onselect={() => { selectedNames = new Set(); loadServers(); }} />
         {/if}
       </div>
       <div class="flex items-center gap-3">
+        {#if selectedNames.size > 0}
+          <span class="text-xs text-text-secondary">{selectedNames.size} selected</span>
+          <button class="text-xs text-text-muted hover:text-text-secondary" onclick={clearSelection}>Clear</button>
+          <button
+            class="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-bg-tertiary border border-border rounded-md text-text-secondary hover:border-accent/30 hover:text-accent transition-colors"
+            onclick={openBulkMoveDialog}
+          >
+            <ArrowRightLeft size={14} />
+            Move / Copy
+          </button>
+        {/if}
         {#if saveMessage}
           <span class="text-xs {saveMessage.startsWith('Error') ? 'text-danger' : 'text-success'}">{saveMessage}</span>
         {/if}
@@ -218,6 +446,16 @@
                 onclick={() => editServer(server)}
                 onkeydown={(e) => e.key === "Enter" && editServer(server)}
               >
+                <label class="shrink-0 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    class="accent-accent"
+                    checked={selectedNames.has(server.name)}
+                    onclick={(e) => e.stopPropagation()}
+                    onchange={() => toggleSelectServer(server.name)}
+                    aria-label="Select server"
+                  />
+                </label>
                 <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0
                   {isStdio ? 'bg-success/10' : 'bg-accent/10'}">
                   {#if isStdio}
@@ -235,6 +473,9 @@
                   </p>
                 </div>
                 <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button class="p-1.5 rounded hover:bg-bg-hover text-text-muted" onclick={(e) => { e.stopPropagation(); openMoveDialog(server); }} aria-label="Move or copy to another place" title="Move / copy to another place">
+                    <ArrowRightLeft size={14} />
+                  </button>
                   <button class="p-1.5 rounded hover:bg-bg-hover text-text-muted" onclick={(e) => { e.stopPropagation(); editServer(server); }} aria-label="Edit">
                     <Edit3 size={14} />
                   </button>

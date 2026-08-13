@@ -564,3 +564,31 @@ pub fn detect_live_sessions() -> Result<Vec<LiveSession>, String> {
     live.sort_by_key(|l| l.modified_secs_ago);
     Ok(live)
 }
+
+#[tauri::command]
+pub fn resume_session(project_path: String, session_id: String) -> Result<(), String> {
+    use crate::commands::git::{shell_quote, spawn_terminal_with_command};
+    let script = format!(
+        "cd {} && claude --resume {}",
+        shell_quote(&project_path),
+        shell_quote(&session_id)
+    );
+    spawn_terminal_with_command(&script)
+}
+
+#[tauri::command]
+pub fn delete_session(path: String) -> Result<(), String> {
+    let target = std::path::Path::new(&path)
+        .canonicalize()
+        .map_err(|e| format!("invalid session path: {e}"))?;
+
+    let projects_dir = paths::projects_dir()
+        .canonicalize()
+        .map_err(|e| format!("failed to resolve projects dir: {e}"))?;
+
+    if !target.starts_with(&projects_dir) {
+        return Err("refusing to delete a file outside the Claude projects directory".to_string());
+    }
+
+    std::fs::remove_file(&target).map_err(|e| format!("failed to delete session: {e}"))
+}

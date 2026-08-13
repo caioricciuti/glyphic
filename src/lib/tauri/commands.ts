@@ -152,6 +152,9 @@ export const api = {
     exportMarkdown: (path: string) =>
       invoke<string>("export_session_markdown", { path }),
     detectLive: () => invoke<LiveSession[]>("detect_live_sessions"),
+    resume: (projectPath: string, sessionId: string) =>
+      invoke<void>("resume_session", { projectPath, sessionId }),
+    delete: (path: string) => invoke<void>("delete_session", { path }),
   },
 
   git: {
