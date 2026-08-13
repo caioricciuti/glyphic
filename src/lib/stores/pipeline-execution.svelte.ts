@@ -2,6 +2,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { encodeUtf8Base64 } from "$lib/utils/format";
 
 export type NodeStatus = "idle" | "running" | "done" | "error";
 
@@ -94,7 +95,7 @@ function startInteractiveTerminal(sessionId: string, prompt: string, workingDir:
   term.loadAddon(fit);
 
   term.onData((data) => {
-    const encoded = btoa(data);
+    const encoded = encodeUtf8Base64(data);
     invoke("write_terminal", { id: sessionId, data: encoded }).catch(() => {});
   });
 

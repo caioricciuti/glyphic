@@ -45,16 +45,10 @@ pub fn write_settings(
 ) -> Result<(), String> {
     let path = resolve_settings_path(&scope, project_path.as_deref())?;
 
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("failed to create directory: {e}"))?;
-    }
-
     let content = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("failed to serialize settings: {e}"))?;
 
-    std::fs::write(&path, content)
-        .map_err(|e| format!("failed to write {}: {e}", path.display()))
+    paths::write_atomic(&path, &content)
 }
 
 #[derive(Serialize, Clone)]

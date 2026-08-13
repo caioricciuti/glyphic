@@ -5,6 +5,7 @@
 //!   exec    — Execute a command, filter output, log savings, print result
 //!   version — Print version
 
+use base64::Engine as _;
 use glyphic_lib::filter;
 use std::io::{self, Read, Write};
 use std::process::Command;
@@ -83,8 +84,11 @@ fn handle_bash_hook(tool_input: Option<&serde_json::Value>) {
 
     let bin = filter::tracker::SavingsTracker::bin_path();
     let bin_str = bin.to_string_lossy();
-    let escaped = command.replace('\\', r"\\").replace('"', r#"\""#);
-    let rewritten = format!(r#""{bin_str}" exec "{escaped}""#);
+    // Base64 the original command so the outer shell can't expand $(…),
+    // backticks or $VARs before `exec` runs it — the command must be
+    // evaluated exactly once, by the shell that `exec` spawns.
+    let encoded = base64::engine::general_purpose::STANDARD.encode(command);
+    let rewritten = format!(r#""{bin_str}" exec --b64 {encoded}"#);
 
     let response = serde_json::json!({
         "hookSpecificOutput": {
@@ -309,7 +313,21 @@ fn should_exclude(command: &str) -> bool {
 
 /// Execute a command, filter its output, log savings, print filtered result.
 fn handle_exec(args: &[String]) {
-    let command = args.join(" ");
+    let command = if args.len() == 2 && args[0] == "--b64" {
+        match base64::engine::general_purpose::STANDARD
+            .decode(&args[1])
+            .ok()
+            .and_then(|b| String::from_utf8(b).ok())
+        {
+            Some(c) => c,
+            None => {
+                eprintln!("glyphic-filter exec: invalid --b64 payload");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        args.join(" ")
+    };
     if command.is_empty() {
         eprintln!("glyphic-filter exec: no command provided");
         std::process::exit(1);

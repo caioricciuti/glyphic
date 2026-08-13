@@ -1,3 +1,11 @@
+// btoa alone throws on non-Latin1 input (emoji, CJK); the PTY expects UTF-8 bytes.
+export function encodeUtf8Base64(data: string): string {
+  const bytes = new TextEncoder().encode(data);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
 export function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;

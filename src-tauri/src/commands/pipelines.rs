@@ -266,7 +266,7 @@ fn resolve_claude_prompt(node: &PipelineNode, context: &Option<String>, all_outp
     let raw_prompt = node.config.get("prompt").and_then(|p| p.as_str()).unwrap_or("hello");
     let prompt = substitute_vars(raw_prompt, ctx, all_outputs);
     if let Some(c) = ctx {
-        format!("Context:\n{}\n\n{}", &c[..c.len().min(2000)], prompt)
+        format!("Context:\n{}\n\n{}", truncate_str(c, 2000), prompt)
     } else {
         prompt
     }
@@ -389,7 +389,10 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &Has
                 "checkout"
                     if !branch.is_empty() => { args.push(branch.to_string()); }
                 "clone" => {
-                    if !branch.is_empty() { args.push(branch.to_string()); }
+                    if !branch.is_empty() {
+                        args.push("-b".to_string());
+                        args.push(branch.to_string());
+                    }
                     args.push(path.clone());
                 }
                 "log" => {
@@ -470,11 +473,13 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &Has
             let raw_body = node.config.get("body").and_then(|b| b.as_str()).unwrap_or("");
             let body_text = substitute_vars(raw_body, ctx, all_outputs);
             let body_final = if body_text.is_empty() { ctx.unwrap_or("").to_string() } else { body_text };
-            // Use osascript for macOS notification
+            // Use osascript for macOS notification. Escape backslashes before
+            // quotes so remote content ({{input}}) can't break out of the
+            // AppleScript string literal.
             let script = format!(
                 "display notification \"{}\" with title \"{}\"",
-                body_final.replace('\"', "\\\"").chars().take(200).collect::<String>(),
-                title.replace('\"', "\\\"")
+                applescript_escape(&body_final.chars().take(200).collect::<String>()),
+                applescript_escape(&title)
             );
             std::process::Command::new("osascript").args(["-e", &script]).output()
                 .map_err(|e| format!("Notification failed: {e}"))?;
@@ -506,9 +511,12 @@ fn execute_node(node: &PipelineNode, context: &Option<String>, all_outputs: &Has
 }
 
 fn expand_tilde(path: &str) -> String {
-    if path.starts_with("~/") || path == "~" {
-        if let Some(home) = dirs::home_dir() {
-            return format!("{}/{}", home.display(), &path[2..]);
+    if let Some(home) = dirs::home_dir() {
+        if path == "~" {
+            return home.display().to_string();
+        }
+        if let Some(rest) = path.strip_prefix("~/") {
+            return format!("{}/{}", home.display(), rest);
         }
     }
     path.to_string()
@@ -516,6 +524,13 @@ fn expand_tilde(path: &str) -> String {
 
 fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+fn applescript_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
 }
 
 /// Traverse a JSON value using dot-path notation like "data.items[0].name"
@@ -590,6 +605,19 @@ pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> R
     let sorted = topo_sort(&pipeline.nodes, &pipeline.connections);
 
     std::thread::spawn(move || {
+        // Reset RUNNING even if a node panics, otherwise no run can ever
+        // start again until the app restarts.
+        struct RunningGuard;
+        impl Drop for RunningGuard {
+            fn drop(&mut self) {
+                if let Ok(mut sender) = INTERACTIVE_SENDER.lock() {
+                    *sender = None;
+                }
+                RUNNING.store(false, Ordering::SeqCst);
+            }
+        }
+        let _running_guard = RunningGuard;
+
         let _ = app_handle.emit("pipeline-event", serde_json::json!({
             "type": "started",
             "message": format!("Started at {}", chrono_now()),
@@ -758,8 +786,6 @@ pub fn start_pipeline_run(pipeline: Pipeline, app_handle: tauri::AppHandle) -> R
             "type": "completed",
             "message": format!("Completed at {}", chrono_now()),
         }));
-
-        RUNNING.store(false, Ordering::SeqCst);
     });
 
     Ok(())

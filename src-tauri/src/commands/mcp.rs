@@ -29,8 +29,7 @@ fn write_mcp_json(project_path: &str, servers: serde_json::Value) -> Result<(), 
     let path = paths::project_mcp_json_path(project_path);
     let content = serde_json::to_string_pretty(&servers)
         .map_err(|e| format!("failed to serialize: {e}"))?;
-    std::fs::write(&path, content)
-        .map_err(|e| format!("failed to write {}: {e}", path.display()))
+    paths::write_atomic(&path, &content)
 }
 
 /// Read Claude Desktop config and extract mcpServers.
@@ -58,8 +57,7 @@ fn write_desktop_config(mut full: serde_json::Value, servers: serde_json::Value)
     }
     let content = serde_json::to_string_pretty(&full)
         .map_err(|e| format!("failed to serialize: {e}"))?;
-    std::fs::write(&path, content)
-        .map_err(|e| format!("failed to write {}: {e}", path.display()))
+    paths::write_atomic(&path, &content)
 }
 
 #[tauri::command]

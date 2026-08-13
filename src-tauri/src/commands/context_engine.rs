@@ -364,14 +364,9 @@ fn update_settings(hook_path: &Path, enable: bool) -> Result<(), String> {
         }
     }
 
-    if let Some(parent) = settings_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("failed to create settings dir: {e}"))?;
-    }
     let content = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("failed to serialize settings: {e}"))?;
-    std::fs::write(&settings_path, content)
-        .map_err(|e| format!("failed to write settings: {e}"))?;
+    paths::write_atomic(&settings_path, &content)?;
     Ok(())
 }
 

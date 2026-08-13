@@ -230,14 +230,9 @@ pub fn enable_optimizer() -> Result<(), String> {
     arr.push(hook_entry);
 
     // Write settings back
-    if let Some(parent) = settings_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("failed to create settings dir: {e}"))?;
-    }
     let content = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("failed to serialize settings: {e}"))?;
-    std::fs::write(&settings_path, content)
-        .map_err(|e| format!("failed to write settings: {e}"))?;
+    paths::write_atomic(&settings_path, &content)?;
 
     Ok(())
 }
@@ -320,8 +315,7 @@ pub fn disable_optimizer() -> Result<(), String> {
 
     let content = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("failed to serialize settings: {e}"))?;
-    std::fs::write(&settings_path, content)
-        .map_err(|e| format!("failed to write settings: {e}"))?;
+    paths::write_atomic(&settings_path, &content)?;
 
     Ok(())
 }
@@ -1001,8 +995,7 @@ pub fn save_filter_rules(content: String) -> Result<(), String> {
         .map_err(|e| format!("failed to create filters dir: {e}"))?;
 
     let custom_path = filters_dir.join("custom.toml");
-    std::fs::write(&custom_path, content)
-        .map_err(|e| format!("failed to write filters: {e}"))?;
+    paths::write_atomic(&custom_path, &content)?;
 
     Ok(())
 }

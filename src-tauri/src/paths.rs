@@ -1,6 +1,24 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+/// Write `content` to `path` atomically: write a temp file in the same
+/// directory, then rename over the target, so a crash mid-write can never
+/// leave a truncated or empty file behind.
+pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
+    let dir = match path.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => Path::new("."),
+    };
+    std::fs::create_dir_all(dir).map_err(|e| format!("failed to create {}: {e}", dir.display()))?;
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("invalid target path")?;
+    let tmp = dir.join(format!(".{file_name}.glyphic-tmp"));
+    std::fs::write(&tmp, content).map_err(|e| format!("failed to write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("failed to replace {}: {e}", path.display()))
+}
+
 /// Reject a user-supplied path component that could escape its intended
 /// directory: path separators, `.`/`..`, empty, or an embedded NUL. Returns the
 /// name unchanged when safe. Call this before joining any untrusted filename or

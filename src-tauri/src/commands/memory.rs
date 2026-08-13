@@ -44,7 +44,7 @@ fn parse_frontmatter(content: &str) -> (Option<String>, Option<String>, Option<S
 
 #[tauri::command]
 pub fn list_memory_files(project_hash: String) -> Result<Vec<MemoryFile>, String> {
-    let dir = paths::memory_dir(&project_hash);
+    let dir = paths::memory_dir(paths::sanitize_component(&project_hash)?);
 
     if !dir.exists() {
         return Ok(vec![]);
@@ -83,7 +83,8 @@ pub fn list_memory_files(project_hash: String) -> Result<Vec<MemoryFile>, String
 
 #[tauri::command]
 pub fn read_memory_file(project_hash: String, filename: String) -> Result<MemoryFile, String> {
-    let path = paths::memory_dir(&project_hash).join(&filename);
+    let path = paths::memory_dir(paths::sanitize_component(&project_hash)?)
+        .join(paths::sanitize_component(&filename)?);
 
     if !path.exists() {
         return Err(format!("file not found: {}", path.display()));
@@ -113,7 +114,7 @@ pub fn write_memory_file(
     memory_type: Option<String>,
     content: String,
 ) -> Result<(), String> {
-    let dir = paths::memory_dir(&project_hash);
+    let dir = paths::memory_dir(paths::sanitize_component(&project_hash)?);
     fs::create_dir_all(&dir)
         .map_err(|e| format!("failed to create memory dir: {e}"))?;
 
@@ -143,7 +144,8 @@ pub fn write_memory_file(
 
 #[tauri::command]
 pub fn delete_memory_file(project_hash: String, filename: String) -> Result<(), String> {
-    let path = paths::memory_dir(&project_hash).join(paths::sanitize_component(&filename)?);
+    let path = paths::memory_dir(paths::sanitize_component(&project_hash)?)
+        .join(paths::sanitize_component(&filename)?);
 
     if path.exists() {
         fs::remove_file(&path)

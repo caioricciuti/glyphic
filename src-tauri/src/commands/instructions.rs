@@ -109,9 +109,12 @@ pub fn read_referenced_file(base_path: String, reference: String) -> Result<Stri
     let base_dir = base.parent().unwrap_or(&base);
 
     // Handle ~ prefix
-    let ref_path = if reference.starts_with('~') {
-        let home = dirs::home_dir().ok_or("no home dir")?;
-        home.join(&reference[2..]) // skip ~/
+    let ref_path = if reference == "~" {
+        dirs::home_dir().ok_or("no home dir")?
+    } else if let Some(rest) = reference.strip_prefix("~/") {
+        dirs::home_dir().ok_or("no home dir")?.join(rest)
+    } else if reference.starts_with('~') {
+        return Err("unsupported ~user reference".into());
     } else {
         base_dir.join(&reference)
     };
