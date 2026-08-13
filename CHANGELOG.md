@@ -8,7 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 - **Plugins v2.** Enable/disable toggle per plugin, update, prune of unused auto-installed dependencies, per-plugin details modal with component inventory and projected token cost, install scopes (user/project/local), and a new Sources tab to add, refresh, and remove plugin marketplaces. The installed list now comes from `claude plugin list --json` instead of parsing internal files
-- **MCP live testing.** Glyphic now speaks MCP over stdio: a flask button on any stdio server connects to it, lists its tools, and lets you execute tool calls with JSON arguments right from a test dialog. Covered by a fake-server roundtrip test
+- **MCP live testing, all transports.** Glyphic now speaks MCP itself: stdio, streamable HTTP (with auth headers and session tracking), and legacy SSE with automatic fallback. A flask button on any server connects to it, lists its tools, and lets you execute tool calls with JSON arguments right from a test dialog. Verified against real servers
+- **Chat with an MCP server through Claude.** A chat button on any server opens a Claude session in the built-in terminal scoped to exactly that server (`--strict-mcp-config`), so you can talk to your MCP with Claude as the interpreter without touching your global config
+- **HTTP headers editing for MCP servers.** URL-type servers get a Headers field (auth tokens), and the editor no longer drops `type`, `env`, or `headers` keys when saving
 - **Visual sandbox editor.** Edit `sandbox.*` from the Settings page: enable/fallback toggles, network domain allowlist, filesystem allow/deny read/write path lists, filesystem isolation toggle, and credential protection (deny or mask) for files and env vars
 - **Auto-mode rules editor.** Prose rule lists (environment, allow, soft deny, hard deny) plus the classify-all-shell toggle, with a heads-up on scopes Claude Code ignores
 - **Token-savings auto-approve toggle.** The optimizer hook auto-approving rewritten Bash commands is now a setting (still the default); switch it off to keep output filtering while Claude Code's normal permission prompts apply
