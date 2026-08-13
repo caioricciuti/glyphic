@@ -150,7 +150,7 @@
     if (!uninstallingPlugin) return;
     const name = uninstallingPlugin;
     try {
-      await api.plugins.install(`uninstall ${name}`); // Use the install command with "uninstall" — hack but works
+      await api.plugins.uninstall(name);
       actionMessage = `Uninstalled ${name}!`;
       setTimeout(() => (actionMessage = null), 3000);
       await loadData();

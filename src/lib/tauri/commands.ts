@@ -125,6 +125,7 @@ export const api = {
     getMarketplace: () => invoke<unknown>("get_marketplace_plugins"),
     getInstallCounts: () => invoke<unknown>("get_install_counts"),
     install: (name: string) => invoke<string>("install_plugin", { name }),
+    uninstall: (name: string) => invoke<string>("uninstall_plugin", { name }),
   },
 
   maintenance: {

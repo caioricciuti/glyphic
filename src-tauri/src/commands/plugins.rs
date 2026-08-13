@@ -93,3 +93,18 @@ pub fn install_plugin(name: String) -> Result<String, String> {
         Err(format!("install failed: {stderr}"))
     }
 }
+
+#[tauri::command]
+pub fn uninstall_plugin(name: String) -> Result<String, String> {
+    let output = Command::new(paths::claude_bin())
+        .args(["plugin", "uninstall", &name])
+        .output()
+        .map_err(|e| format!("failed to run claude: {e}"))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(format!("uninstall failed: {stderr}"))
+    }
+}

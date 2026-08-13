@@ -143,6 +143,7 @@ pub fn run() {
             commands::plugins::get_marketplace_plugins,
             commands::plugins::get_install_counts,
             commands::plugins::install_plugin,
+            commands::plugins::uninstall_plugin,
             // Git
             commands::git::git_status,
             commands::git::git_log,
