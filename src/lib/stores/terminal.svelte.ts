@@ -62,6 +62,7 @@ export async function createSession(
   projectPath: string,
   projectName: string,
   resumeSessionId?: string,
+  mcpConfig?: string,
 ): Promise<string> {
   const id = crypto.randomUUID();
 
@@ -140,6 +141,7 @@ export async function createSession(
     cols: 80,
     rows: 24,
     resumeSessionId: resumeSessionId ?? null,
+    mcpConfig: mcpConfig ?? null,
   });
 
   return id;

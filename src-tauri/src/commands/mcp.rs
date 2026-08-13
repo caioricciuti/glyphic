@@ -149,26 +149,110 @@ pub fn delete_mcp_server(
 }
 
 // ── Live testing ────────────────────────────────────────────────────────────
-// Minimal MCP client over stdio (newline-delimited JSON-RPC 2.0): spawn the
-// configured server, initialize, then list or call tools. The child is killed
-// when the client drops.
+// Minimal MCP client with two transports: stdio (newline-delimited JSON-RPC,
+// spawned child killed on drop) and streamable HTTP (POST per message, SSE
+// responses parsed, Mcp-Session-Id tracked). Initialize, then list/call tools.
+
+enum McpTransport {
+    Stdio {
+        child: std::process::Child,
+        stdin: std::process::ChildStdin,
+        rx: std::sync::mpsc::Receiver<String>,
+    },
+    Http {
+        agent: ureq::Agent,
+        url: String,
+        headers: Vec<(String, String)>,
+        session_id: Option<String>,
+    },
+    /// Legacy SSE transport: a GET stream delivers an `endpoint` event with
+    /// the POST URL; requests go to that endpoint and responses arrive as
+    /// `data:` events on the stream.
+    Sse {
+        agent: ureq::Agent,
+        endpoint: String,
+        headers: Vec<(String, String)>,
+        rx: std::sync::mpsc::Receiver<String>,
+    },
+}
+
+/// Resolve an SSE `endpoint` value against the base stream URL.
+fn resolve_endpoint(base_url: &str, endpoint: &str) -> String {
+    if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
+        return endpoint.to_string();
+    }
+    if let Some(rest) = endpoint.strip_prefix('/') {
+        // scheme://host[:port] + /endpoint
+        if let Some(scheme_end) = base_url.find("://") {
+            let host_end = base_url[scheme_end + 3..]
+                .find('/')
+                .map(|i| scheme_end + 3 + i)
+                .unwrap_or(base_url.len());
+            return format!("{}/{}", &base_url[..host_end], rest);
+        }
+    }
+    // relative to the stream URL's directory
+    match base_url.rsplit_once('/') {
+        Some((dir, _)) => format!("{dir}/{endpoint}"),
+        None => endpoint.to_string(),
+    }
+}
 
 struct McpClient {
-    child: std::process::Child,
-    stdin: std::process::ChildStdin,
-    rx: std::sync::mpsc::Receiver<String>,
+    transport: McpTransport,
     next_id: u64,
 }
 
+fn extract_result(value: serde_json::Value) -> Result<serde_json::Value, String> {
+    if let Some(err) = value.get("error") {
+        return Err(format!("server error: {err}"));
+    }
+    Ok(value.get("result").cloned().unwrap_or(serde_json::Value::Null))
+}
+
 impl McpClient {
-    fn spawn(config: &serde_json::Value) -> Result<Self, String> {
+    fn connect(config: &serde_json::Value) -> Result<Self, String> {
+        if config.get("url").is_some() {
+            Self::connect_http(config)
+        } else if config.get("command").is_some() {
+            Self::spawn_stdio(config)
+        } else {
+            Err("server config has neither a \"command\" (stdio) nor a \"url\" (http)".to_string())
+        }
+    }
+
+    fn connect_http(config: &serde_json::Value) -> Result<Self, String> {
+        let url = config
+            .get("url")
+            .and_then(|u| u.as_str())
+            .ok_or("missing server url")?
+            .to_string();
+        let headers: Vec<(String, String)> = config
+            .get("headers")
+            .and_then(|h| h.as_object())
+            .map(|h| {
+                h.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let agent = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(20))
+            .build();
+        Ok(Self {
+            transport: McpTransport::Http { agent, url, headers, session_id: None },
+            next_id: 1,
+        })
+    }
+
+    fn spawn_stdio(config: &serde_json::Value) -> Result<Self, String> {
         use std::io::BufRead;
         use std::process::{Command, Stdio};
 
         let command = config
             .get("command")
             .and_then(|c| c.as_str())
-            .ok_or("only stdio servers (with a \"command\") can be live-tested for now")?;
+            .ok_or("missing server command")?;
         let args: Vec<String> = config
             .get("args")
             .and_then(|a| a.as_array())
@@ -203,69 +287,277 @@ impl McpClient {
             }
         });
 
-        Ok(Self { child, stdin, rx, next_id: 1 })
+        Ok(Self {
+            transport: McpTransport::Stdio { child, stdin, rx },
+            next_id: 1,
+        })
     }
 
     fn request(&mut self, method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
-        use std::io::Write;
-
         let id = self.next_id;
         self.next_id += 1;
         let msg = serde_json::json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
-        writeln!(self.stdin, "{msg}").map_err(|e| format!("write to server failed: {e}"))?;
-        let _ = self.stdin.flush();
+        match self.transport {
+            McpTransport::Http { .. } => self
+                .http_send(&msg, Some(id), method)?
+                .ok_or_else(|| format!("empty response for {method}")),
+            McpTransport::Sse { .. } => self.sse_request(&msg, id, method),
+            McpTransport::Stdio { .. } => self.stdio_request(&msg, id, method),
+        }
+    }
+
+    fn notify(&mut self, method: &str) {
+        let msg = serde_json::json!({ "jsonrpc": "2.0", "method": method });
+        if matches!(self.transport, McpTransport::Http { .. }) {
+            let _ = self.http_send(&msg, None, method);
+            return;
+        }
+        match &mut self.transport {
+            McpTransport::Stdio { stdin, .. } => {
+                use std::io::Write;
+                let _ = writeln!(stdin, "{msg}");
+                let _ = stdin.flush();
+            }
+            McpTransport::Sse { agent, endpoint, headers, .. } => {
+                let mut req = agent.post(endpoint).set("Content-Type", "application/json");
+                for (k, v) in headers.iter() {
+                    req = req.set(k, v);
+                }
+                let _ = req.send_string(&msg.to_string());
+            }
+            McpTransport::Http { .. } => unreachable!(),
+        }
+    }
+
+    /// Switch from streamable HTTP to the legacy SSE transport: open the GET
+    /// stream, wait for the `endpoint` event, and route requests there.
+    fn upgrade_to_sse(&mut self) -> Result<(), String> {
+        use std::io::BufRead;
+
+        let McpTransport::Http { url, headers, .. } = &self.transport else {
+            return Err("not an http transport".to_string());
+        };
+        let url = url.clone();
+        let headers = headers.clone();
+
+        // No overall timeout: the SSE stream stays open for the client's life.
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(std::time::Duration::from_secs(10))
+            .timeout_read(std::time::Duration::from_secs(120))
+            .build();
+
+        let mut req = agent.get(&url).set("Accept", "text/event-stream");
+        for (k, v) in headers.iter() {
+            req = req.set(k, v);
+        }
+        let resp = req.call().map_err(|e| format!("SSE connect failed: {e}"))?;
+        let reader = resp.into_reader();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let br = std::io::BufReader::new(reader);
+            for line in br.lines().map_while(Result::ok) {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut in_endpoint_event = false;
+        let endpoint = loop {
+            let remaining = deadline
+                .checked_duration_since(std::time::Instant::now())
+                .ok_or("timed out waiting for the SSE endpoint event")?;
+            let line = rx
+                .recv_timeout(remaining)
+                .map_err(|_| "timed out waiting for the SSE endpoint event".to_string())?;
+            if let Some(ev) = line.strip_prefix("event:") {
+                in_endpoint_event = ev.trim() == "endpoint";
+                continue;
+            }
+            if let Some(data) = line.strip_prefix("data:") {
+                if in_endpoint_event {
+                    break resolve_endpoint(&url, data.trim());
+                }
+            }
+        };
+
+        self.transport = McpTransport::Sse { agent, endpoint, headers, rx };
+        Ok(())
+    }
+
+    fn sse_request(
+        &mut self,
+        msg: &serde_json::Value,
+        id: u64,
+        method: &str,
+    ) -> Result<serde_json::Value, String> {
+        let McpTransport::Sse { agent, endpoint, headers, rx } = &mut self.transport else {
+            return Err("not an sse transport".to_string());
+        };
+
+        let mut req = agent.post(endpoint).set("Content-Type", "application/json");
+        for (k, v) in headers.iter() {
+            req = req.set(k, v);
+        }
+        match req.send_string(&msg.to_string()) {
+            Ok(_) => {}
+            Err(ureq::Error::Status(code, r)) => {
+                let body = r.into_string().unwrap_or_default();
+                let snippet: String = body.chars().take(300).collect();
+                return Err(format!("server returned HTTP {code} for {method}: {snippet}"));
+            }
+            Err(e) => return Err(format!("request failed: {e}")),
+        }
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
         loop {
             let remaining = deadline
                 .checked_duration_since(std::time::Instant::now())
                 .ok_or_else(|| format!("timed out waiting for {method} response"))?;
-            let line = self
-                .rx
+            let line = rx
+                .recv_timeout(remaining)
+                .map_err(|_| format!("timed out waiting for {method} response on the SSE stream"))?;
+            let Some(data) = line.strip_prefix("data:") else { continue };
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(data.trim()) else {
+                continue;
+            };
+            if value.get("id").and_then(|i| i.as_u64()) == Some(id) {
+                return extract_result(value);
+            }
+        }
+    }
+
+    fn stdio_request(
+        &mut self,
+        msg: &serde_json::Value,
+        id: u64,
+        method: &str,
+    ) -> Result<serde_json::Value, String> {
+        use std::io::Write;
+        let McpTransport::Stdio { stdin, rx, .. } = &mut self.transport else {
+            return Err("not a stdio transport".to_string());
+        };
+        writeln!(stdin, "{msg}").map_err(|e| format!("write to server failed: {e}"))?;
+        let _ = stdin.flush();
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        loop {
+            let remaining = deadline
+                .checked_duration_since(std::time::Instant::now())
+                .ok_or_else(|| format!("timed out waiting for {method} response"))?;
+            let line = rx
                 .recv_timeout(remaining)
                 .map_err(|_| format!("timed out waiting for {method} response (is this a valid MCP stdio server?)"))?;
             let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
                 continue; // non-JSON noise on stdout
             };
             if value.get("id").and_then(|i| i.as_u64()) == Some(id) {
-                if let Some(err) = value.get("error") {
-                    return Err(format!("server error: {err}"));
-                }
-                return Ok(value.get("result").cloned().unwrap_or(serde_json::Value::Null));
+                return extract_result(value);
             }
             // notifications and unrelated ids are skipped
         }
     }
 
-    fn initialize(&mut self) -> Result<serde_json::Value, String> {
-        use std::io::Write;
+    /// POST one JSON-RPC message. `id: None` is a notification (no response
+    /// expected). Handles plain JSON and SSE-formatted response bodies, and
+    /// tracks the Mcp-Session-Id header across calls.
+    fn http_send(
+        &mut self,
+        msg: &serde_json::Value,
+        id: Option<u64>,
+        method: &str,
+    ) -> Result<Option<serde_json::Value>, String> {
+        let McpTransport::Http { agent, url, headers, session_id } = &mut self.transport else {
+            return Err("not an http transport".to_string());
+        };
 
-        let init = self.request(
-            "initialize",
-            serde_json::json!({
-                "protocolVersion": "2025-06-18",
-                "capabilities": {},
-                "clientInfo": { "name": "glyphic", "version": env!("CARGO_PKG_VERSION") }
-            }),
-        )?;
-        let note = serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
-        let _ = writeln!(self.stdin, "{note}");
-        let _ = self.stdin.flush();
+        let mut req = agent
+            .post(url)
+            .set("Content-Type", "application/json")
+            .set("Accept", "application/json, text/event-stream");
+        for (k, v) in headers.iter() {
+            req = req.set(k, v);
+        }
+        if let Some(sid) = session_id.as_deref() {
+            req = req.set("Mcp-Session-Id", sid);
+        }
+
+        let resp = match req.send_string(&msg.to_string()) {
+            Ok(r) => r,
+            Err(ureq::Error::Status(code, r)) => {
+                let body = r.into_string().unwrap_or_default();
+                let snippet: String = body.chars().take(300).collect();
+                return Err(format!("server returned HTTP {code} for {method}: {snippet}"));
+            }
+            Err(e) => return Err(format!("request failed: {e}")),
+        };
+
+        if let Some(sid) = resp.header("mcp-session-id") {
+            *session_id = Some(sid.to_string());
+        }
+        let content_type = resp.header("content-type").unwrap_or("").to_string();
+        let body = resp
+            .into_string()
+            .map_err(|e| format!("failed to read response: {e}"))?;
+
+        let Some(id) = id else { return Ok(None) };
+
+        if content_type.contains("text/event-stream") {
+            for line in body.lines() {
+                let Some(data) = line.strip_prefix("data:") else { continue };
+                let Ok(value) = serde_json::from_str::<serde_json::Value>(data.trim()) else {
+                    continue;
+                };
+                if value.get("id").and_then(|i| i.as_u64()) == Some(id) {
+                    return extract_result(value).map(Some);
+                }
+            }
+            Err(format!("no response for {method} in event stream"))
+        } else {
+            let value: serde_json::Value = serde_json::from_str(&body)
+                .map_err(|e| format!("invalid JSON response for {method}: {e}"))?;
+            extract_result(value).map(Some)
+        }
+    }
+
+    fn initialize(&mut self) -> Result<serde_json::Value, String> {
+        let params = serde_json::json!({
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": { "name": "glyphic", "version": env!("CARGO_PKG_VERSION") }
+        });
+        let init = match self.request("initialize", params.clone()) {
+            Ok(init) => init,
+            // Streamable HTTP rejected the POST: retry over legacy SSE
+            Err(e)
+                if matches!(self.transport, McpTransport::Http { .. })
+                    && (e.contains("HTTP 405") || e.contains("HTTP 404")) =>
+            {
+                self.upgrade_to_sse()?;
+                self.request("initialize", params)?
+            }
+            Err(e) => return Err(e),
+        };
+        self.notify("notifications/initialized");
         Ok(init)
     }
 }
 
 impl Drop for McpClient {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let McpTransport::Stdio { child, .. } = &mut self.transport {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 
 /// Connect to a server, initialize, and list its tools.
 #[tauri::command(async)]
 pub fn test_mcp_server(config: serde_json::Value) -> Result<serde_json::Value, String> {
-    let mut client = McpClient::spawn(&config)?;
+    let mut client = McpClient::connect(&config)?;
     let init = client.initialize()?;
     let tools = client.request("tools/list", serde_json::json!({}))?;
     Ok(serde_json::json!({
@@ -282,7 +574,7 @@ pub fn call_mcp_tool(
     tool: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let mut client = McpClient::spawn(&config)?;
+    let mut client = McpClient::connect(&config)?;
     client.initialize()?;
     client.request("tools/call", serde_json::json!({ "name": tool, "arguments": args }))
 }
@@ -307,8 +599,44 @@ mod tests {
     }
 
     #[test]
-    fn mcp_client_rejects_url_only_config() {
-        let config = serde_json::json!({ "url": "https://example.com/mcp" });
+    #[ignore] // network test: GLYPHIC_TEST_MCP_CONFIG='{"url":...}' cargo test -- --ignored
+    fn mcp_client_live_http_roundtrip() {
+        let config: serde_json::Value = if let Ok(raw) = std::env::var("GLYPHIC_TEST_MCP_CONFIG") {
+            serde_json::from_str(&raw).expect("GLYPHIC_TEST_MCP_CONFIG must be JSON")
+        } else if let Ok(url) = std::env::var("GLYPHIC_TEST_MCP_URL") {
+            serde_json::json!({ "url": url })
+        } else {
+            return;
+        };
+        let result = super::test_mcp_server(config).expect("live roundtrip should succeed");
+        let tools = result["tools"].as_array().expect("tools array");
+        println!(
+            "connected to {:?} ({} tools): {:?}",
+            result["serverInfo"],
+            tools.len(),
+            tools.iter().filter_map(|t| t["name"].as_str()).take(8).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn resolve_endpoint_variants() {
+        assert_eq!(
+            super::resolve_endpoint("http://x.io/mcp", "/messages?sid=1"),
+            "http://x.io/messages?sid=1"
+        );
+        assert_eq!(
+            super::resolve_endpoint("http://x.io/a/mcp", "msg"),
+            "http://x.io/a/msg"
+        );
+        assert_eq!(
+            super::resolve_endpoint("http://x.io/mcp", "https://y.io/m"),
+            "https://y.io/m"
+        );
+    }
+
+    #[test]
+    fn mcp_client_rejects_config_without_command_or_url() {
+        let config = serde_json::json!({ "type": "http" });
         assert!(super::test_mcp_server(config).is_err());
     }
 }

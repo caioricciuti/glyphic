@@ -5,7 +5,9 @@
   import ProjectPicker from "$lib/components/shared/ProjectPicker.svelte";
   import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
   import { getSelectedProjectPath, getProjects, isLoaded, loadProjects } from "$lib/stores/project-context.svelte";
-  import { Server, Plus, Cloud, Terminal, Globe, Trash2, Edit3, X, LayoutGrid, ArrowRightLeft, Copy, FolderOpen, FlaskConical, Play } from "lucide-svelte";
+  import { Server, Plus, Cloud, Terminal, Globe, Trash2, Edit3, X, LayoutGrid, ArrowRightLeft, Copy, FolderOpen, FlaskConical, Play, MessageSquare } from "lucide-svelte";
+  import { createSession } from "$lib/stores/terminal.svelte";
+  import { navigateTo } from "$lib/stores/navigation.svelte";
   import TemplateGallery from "$lib/components/shared/TemplateGallery.svelte";
 
   interface ServerEntry {
@@ -28,6 +30,7 @@
   let formCommand = $state("");
   let formArgs = $state("");
   let formUrl = $state("");
+  let formHeaders = $state("");
 
   // Delete
   let deletingServerName = $state<string | null>(null);
@@ -99,6 +102,9 @@
     if ("url" in server.config) {
       formType = "sse";
       formUrl = (server.config.url as string) ?? "";
+      formHeaders = Object.entries((server.config.headers as Record<string, string>) ?? {})
+        .map(([k, v]) => `${k}: ${v}`)
+        .join("\n");
       formCommand = "";
       formArgs = "";
     } else {
@@ -106,6 +112,7 @@
       formCommand = (server.config.command as string) ?? "";
       formArgs = ((server.config.args as string[]) ?? []).join(" ");
       formUrl = "";
+      formHeaders = "";
     }
   }
 
@@ -117,6 +124,7 @@
     formCommand = template?.command ?? "";
     formArgs = template?.args ?? "";
     formUrl = "";
+    formHeaders = "";
   }
 
   async function saveServer() {
@@ -125,9 +133,24 @@
     saveMessage = null;
     try {
       const pp = needsProject ? projectPath ?? undefined : undefined;
-      const config = formType === "stdio"
-        ? { command: formCommand, args: formArgs.split(/\s+/).filter(Boolean) }
-        : { url: formUrl };
+      const prev = editing?.config ?? {};
+      let config: Record<string, unknown>;
+      if (formType === "stdio") {
+        config = { command: formCommand, args: formArgs.split(/\s+/).filter(Boolean) };
+        if (prev.env) config.env = prev.env; // keep env vars the form doesn't edit
+      } else {
+        const headers: Record<string, string> = {};
+        for (const line of formHeaders.split("\n")) {
+          const idx = line.indexOf(":");
+          if (idx > 0) {
+            const key = line.slice(0, idx).trim();
+            const value = line.slice(idx + 1).trim();
+            if (key && value) headers[key] = value;
+          }
+        }
+        config = { type: (prev.type as string) ?? "http", url: formUrl };
+        if (Object.keys(headers).length > 0) config.headers = headers;
+      }
       await api.mcp.upsert(scope, formName.trim(), config, pp);
       await loadServers();
       editing = null;
@@ -292,6 +315,18 @@
       toolResults = { ...toolResults, [name]: `Error: ${e}` };
     } finally {
       toolRunning = null;
+    }
+  }
+
+  // Open a Claude session in the built-in terminal scoped to exactly this
+  // server (via --strict-mcp-config), so you can talk to the MCP through Claude
+  async function chatWithServer(server: ServerEntry) {
+    const mcpConfig = JSON.stringify({ mcpServers: { [server.name]: server.config } });
+    try {
+      await createSession(projectPath ?? "~", `MCP: ${server.name}`, undefined, mcpConfig);
+      navigateTo("terminal");
+    } catch (e) {
+      console.error("Failed to open MCP chat session:", e);
     }
   }
 
@@ -618,11 +653,12 @@
                   </p>
                 </div>
                 <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  {#if isStdio}
-                    <button class="p-1.5 rounded hover:bg-bg-hover text-text-muted" onclick={(e) => { e.stopPropagation(); openTest(server); }} aria-label="Test server" title="Connect and try its tools">
-                      <FlaskConical size={14} />
-                    </button>
-                  {/if}
+                  <button class="p-1.5 rounded hover:bg-bg-hover text-text-muted" onclick={(e) => { e.stopPropagation(); openTest(server); }} aria-label="Test server" title="Connect and try its tools">
+                    <FlaskConical size={14} />
+                  </button>
+                  <button class="p-1.5 rounded hover:bg-bg-hover text-text-muted" onclick={(e) => { e.stopPropagation(); chatWithServer(server); }} aria-label="Chat with this server through Claude" title="Open a Claude session scoped to this server">
+                    <MessageSquare size={14} />
+                  </button>
                   <button class="p-1.5 rounded hover:bg-bg-hover text-text-muted" onclick={(e) => { e.stopPropagation(); openMoveDialog(server); }} aria-label="Move or copy to another place" title="Move / copy to another place">
                     <ArrowRightLeft size={14} />
                   </button>
@@ -694,6 +730,15 @@
           <label class="block">
             <span class="text-xs text-text-muted">URL</span>
             <input type="text" class="w-full mt-1 px-3 py-1.5 text-sm bg-bg-tertiary border border-border rounded-md text-text-primary font-mono focus:outline-none focus:border-accent" placeholder="http://localhost:8000/sse" bind:value={formUrl} />
+          </label>
+          <label class="block">
+            <span class="text-xs text-text-muted">Headers</span>
+            <textarea
+              class="w-full mt-1 px-3 py-1.5 text-sm bg-bg-tertiary border border-border rounded-md text-text-primary font-mono focus:outline-none focus:border-accent resize-y h-16"
+              placeholder="Authorization: Bearer <token>"
+              bind:value={formHeaders}
+            ></textarea>
+            <p class="text-[10px] text-text-muted mt-1">One "Name: value" per line. Sent on every request (auth tokens go here).</p>
           </label>
         {/if}
       </div>

@@ -32,6 +32,7 @@ pub fn spawn_terminal(
     prompt: Option<String>,
     dangerously_skip_permissions: Option<bool>,
     resume_session_id: Option<String>,
+    mcp_config: Option<String>,
     state: tauri::State<PtyState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
@@ -54,10 +55,25 @@ pub fn spawn_terminal(
         cmd.arg("--resume");
         cmd.arg(id);
     }
+    if let Some(ref mc) = mcp_config {
+        // Scope the session to exactly these servers (JSON config inline)
+        cmd.arg("--strict-mcp-config");
+        cmd.arg("--mcp-config");
+        cmd.arg(mc);
+    }
     if let Some(ref p) = prompt {
         cmd.arg(p);
     }
-    cmd.cwd(&path);
+    // "~" means "no particular project": run from the home directory
+    let cwd = if path == "~" || path.is_empty() {
+        crate::paths::claude_home()
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.clone())
+    } else {
+        path.clone()
+    };
+    cmd.cwd(&cwd);
 
     // Set TERM for proper color support
     cmd.env("TERM", "xterm-256color");
